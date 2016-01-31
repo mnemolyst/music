@@ -1,15 +1,14 @@
 define(function() {
-    function Scene2D(canvas) {
+    var Scene2D = function(canvas) {
         this.context = canvas.getContext('2d');
         this.sceneWidth = canvas.width;
         this.sceneHeight = canvas.height;
+        this.halfWidth = this.sceneWidth * 0.5;
+        this.halfHeight = this.sceneHeight * 0.5;
 
         this.render = function() {
-            var halfWidth = this.sceneWidth*0.5;
-            var halfHeight = this.sceneHeight*0.5;
-
             this.context.save();
-            this.context.fillStyle = '#000000';
+            this.context.fillStyle = '#ffffff';
             this.context.fillRect(0, 0, this.sceneWidth, this.sceneHeight);
             this.context.restore();
         }
