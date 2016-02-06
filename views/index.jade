@@ -2,9 +2,9 @@ extends layout
 
 block content
     .canvas
-        canvas(id='canvas', resize="true")
-    .compositions
-        each composition in compositions
-            - var id = composition._id.toString()
-            .composition
-                a(href="javascript:void(null)", data-composition-id=id)= composition.name
+        canvas(id='canvas', resize)
+    //-.compositions
+    //-    each composition in compositions
+    //-        - var id = composition._id.toString()
+    //-        .composition
+    //-            a(href="javascript:void(null)", data-composition-id=id)= composition.name

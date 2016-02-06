@@ -1,5 +1,7 @@
 body {
   font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+  margin:0px;
+  overflow:hidden;
 }
 
 a {
@@ -7,5 +9,4 @@ a {
 }
 
 #canvas {
-    border:1px solid black;
 }

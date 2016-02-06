@@ -1,153 +1,93 @@
 define(['jquery', 'paper'], function($, paperJs) {
     paperJs.paper.install(this);
 
+    var upperLeft = new Point(100, 100);
+    var timeSpacing = 20;
+    var freqSpacing = 20;
+    var paths = [];
+    var cursor = {
+        t: 0,
+        fq: 440,
+        vPath: null,
+        hPath: null,
+        update: function() {
+            this.vPath.position.x = upperLeft.x + 5 + timeSpacing * t;
+            this.hPath.position.x = upperLeft.x + 5 + timeSpacing * t;
+            this.hPath.position.y = upperLeft.y + freqSpacing * (fq//todo log freq spacing
+    };
+
+    function init() {
+        view.viewSize = [window.innerWidth, window.innerHeight];
+
+        for (var i = 0; i < 24; i++) { // two octaves
+            var path = new Path({
+                strokeColor: 'black',
+            });
+            var p = upperLeft.add([0, freqSpacing * i]);
+            path.add(p);
+            p.x = view.viewSize.width - 100;
+            path.add(p);
+            paths.push(path);
+        }
+
+        cursor.hPath = new Path({
+            strokeColor: 'red',
+        });
+        cursor.hPath.add(upperLeft.add([5, -5]));
+        cursor.hPath.add(paths[paths.length - 1].firstSegment.point.add([5, 5]));
+
+        cursor.vPath = new Path({
+            strokeColor: 'red',
+        });
+        cursor.vPath.add(upperLeft.add([0, freqSpacing * 0.5]));
+        cursor.vPath.add(upperLeft.add([10, freqSpacing * 0.5]));
+    }
+
+    //var path = new Path({
+    //    strokeColor: 'black',
+    //});
+    //var start = new Point(100, 100);
+    //path.moveTo(start);
+    //path.lineTo(start.add([view.viewSize.width - 100, 0]));
+
     $(document).ready(function() {
-        //var paper = paperJs.paper;
         var canvas = document.getElementById('canvas');
         var $canvas = $(canvas);
         paper.setup(canvas);
-        var path = new Path();
-        path.strokeColor = 'black';
-        var start = new Point(100, 100);
-        path.moveTo(start);
-        path.lineTo(start.add([200, -50]));
+
         view.onFrame = function(event) {
-            //path.rotate(3);
         }
-        $(window).on('resize', function() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        });
+
+        var tool = new Tool();
+        tool.onKeyDown = function(event) {
+            switch (event.key) {
+                case 'h':
+                    cursor.t -= 1;
+                    cursor.hPath.position.x -= timeSpacing;
+                    break;
+                case 'l':
+                    cursor.t += 1;
+                    cursor.hPath.position.x += timeSpacing;
+                    break;
+            }
+        };
+
+        window.onresize = function() {
+            view.viewSize = [window.innerWidth, window.innerHeight];
+            for (var i = 0; i < paths.length; i++) {
+                if (paths[i].segments.length > 0) {
+                    paths[i].removeSegments(1);
+                }
+                var p1 = paths[i].firstSegment.point;
+                var p2 = p1.clone();
+                p2.x = view.viewSize.width - 100;
+                paths[i].add(p2);
+            }
+            view.fire('resize', view);
+        }
+
+        init();
     });
-
-    //function setup($) {
-    //    var offset = canvas.offset();
-    //    var scene = new Scene2D(canvas[0]);
-    //    var state = 'none';
-
-    //    setInterval(function () {
-    //        scene.tic();
-    //        frames++;
-    //    }, renderInterval);
-
-    //    $(document).keydown(function(event) {
-    //        if (state == 'alert_next_key') {
-    //            state = 'none';
-    //            alert(event.which);
-    //        }
-
-    //        // KEYS
-    //        switch(event.which) {
-    //            case 8:                                       //backspace
-    //            break;
-    //            case 9:                                       //tab
-    //            break;
-    //            case 13:                                      //enter
-    //            break;
-    //            case 27:                                      //esc
-    //            break;
-    //            case 37:                                      //left arrow
-    //                if (event.shiftKey) {
-    //                } else {
-    //                    scene.panX -= 5;
-    //                }
-    //            break;
-    //            case 38:                                      //up arrow
-    //                scene.panY -= 5;
-    //            break;
-    //            case 39:                                      //right arrow
-    //                if (event.shiftKey) {
-    //                } else {
-    //                    scene.panX += 5;
-    //                }
-    //            break;
-    //            case 40:                                      //down arrow
-    //                scene.panY += 5;
-    //            break;
-    //            case 46:                                      //delete
-    //            break;
-    //            case 48: case 49: case 50:                    //'0'-'2'
-    //            break;
-    //            case 51: case 52: case 53: case 54: case 55: case 56: case 57: //'3'-'9'
-    //                addPoly(event.which - 48);
-    //            break;
-    //            case 61:                                      //'=' / '+'
-    //            break;
-    //            case 65:                                      //'a'
-    //                addRhombA();
-    //            break;
-    //            case 66:                                      //'b'
-    //                addRhombB();
-    //            break;
-    //            case 67:                                      //'c'
-    //            break;
-    //            case 68:                                      //'d'
-    //                addDart(); //TODO
-    //            break;
-    //            case 69:                                      //'e'
-    //            break;
-    //            case 70:                                      //'f'
-    //                addPoly(Math.floor(Math.random()*6+3));
-    //            break;
-    //            case 71:                                      //'g'
-    //                gravity = !gravity;
-    //            break;
-    //            case 72:                                      //'h'
-    //                hoist = !hoist;
-    //            break;
-    //            case 73:                                      //'i'
-    //                scene.scale *= 1.1;
-    //            break;
-    //            case 76:                                      //'l'
-    //            break;
-    //            case 78:                                      //'n'
-    //                drawText = !drawText;
-    //            break;
-    //            case 79:                                      //'o'
-    //                scene.scale /= 1.1;
-    //            break;
-    //            case 80:                                      //'p'
-    //                pause = !pause;
-    //            break;
-    //            case 82:                                      //'r'
-    //            break;
-    //            case 83:                                      //'s'
-    //            break;
-    //            case 85:                                      //'u'
-    //                scene.zTranslate -= 0.2;
-    //            break;
-    //            case 86:                                      //'v'
-    //            break;
-    //            case 87:                                      //'w'
-    //            break;
-    //            case 89:                                      //'y'
-    //            break;
-    //            case 90:                                      //'z'
-    //            break;
-    //            case 173:                                     //'-'
-    //            break;
-    //            case 190:                                     //'.'
-    //            break;
-    //            case 191:                                     //'/'
-    //            break;
-    //            case 192:                                     //'`'
-    //                if (event.shiftKey)
-    //                state = 'alert_next_key';
-    //            break;
-    //            case 220:                                     //'\'
-    //            break;
-    //        }
-    //    });
-
-    //    $('#canvas').mousedown(function(event) {
-    //    });
-
-    //    $('#canvas').mousemove(function(event) {
-    //    });
-
-    //    $('#canvas').mouseup(function(event) {
-    //    });
-    //}
 
     return { };
 });
