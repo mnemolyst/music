@@ -3,28 +3,57 @@ define(['jquery', 'paper'], function($, paperJs) {
 
     var upperLeft = new Point(100, 100);
     var leftTime = 0;
-    var topNote = 48; // 880Hz (A5)
-    var timeSpacing = 20;
-    var noteSpacing = 20;
+    var topNoteLine = 8; // 698.46 Hz (F5)
+    var timeSpacing = 10;
+    var noteSpacing = 10;
     var noteLines = [];
+    var staff = {
+        noteLines = [
+            { name: 'f5', note: 8, },
+            { name: 'e5', note: 7, },
+            { name: 'd5', note: 5, },
+            { name: 'c5', note: 3, },
+            { name: 'b4', note: 2, },
+            { name: 'a4', note: 0, },
+            { name: 'g4', note: -2, },
+            { name: 'f4', note: -4, },
+            { name: 'e4', note: -5, },
+
+            { name: 'a3', note: -12, },
+            { name: 'g3', note: -14, },
+            { name: 'f3', note: -16, },
+            { name: 'e3', note: -17, },
+            { name: 'd3', note: -19, },
+            { name: 'c3', note: -21, },
+            { name: 'b2', note: -22, },
+            { name: 'a2', note: -24, },
+            { name: 'g2', note: -26, },
+        ],
+    }
+    no = [0, 2, 3, 5, 7, 8, 10];
+    note = 1;
+    for (var i = 0, mn = note % 12; mn < no[i]; i++);
+
     var cursor = {
         t: 0,
-        note: 48,
+        noteLine: 8,
         vPath: null,
         hPath: null,
         update: function() {
             this.vPath.position.x = upperLeft.x + timeSpacing * (this.t - leftTime);
             this.vPath.position.y = upperLeft.y;
-            this.hPath.position.x = upperLeft.x + 5 + timeSpacing * (this.t - leftTime);
+            this.hPath.position.x = upperLeft.x - 5 + timeSpacing * (this.t - leftTime);
             this.hPath.position.y = frequency.noteToY(this.note);
         }
     }
+
     var Note = function(t, d, note) {
         this.t = t;
         this.d = d;
         this.note = note;
         this.path = new Path({
             strokeColor: 'blue',
+            strokeWidth: 5,
         });
         var p = new Point(upperLeft.x + timeSpacing * (this.t - leftTime), frequency.noteToY(this.note));
         this.path.add(p);
@@ -35,19 +64,29 @@ define(['jquery', 'paper'], function($, paperJs) {
         this.path.position.x = upperLeft.x + timeSpacing * (this.t - leftTime);
         this.path.position.y = frequency.noteToY(this.note);
     }
+
     var notes = [];
+    var scale = [3, 5, 7, 8, 10, 12, 14]; // C Maj
 
     var frequency = {
         noteToFreq: function(note) {
-            var bf = 55;
-            var twelfthRootTwo = 1.0594630943592953;
-            for (var i = 0; i < note; i++) {
-                bf *= twelfthRootTwo;
+            var bf = 440; // Hz (note A1)
+            if (note < 0) {
+                for (var i = 0; i > note; i--) {
+                    bf *= 0.9438743126816934; // inverse of twelfth root of 2
+                }
+            } else if (note > 0) {
+                for (var i = 0; i < note; i++) {
+                    bf *= 1.0594630943592953; // twelfth root of 2
+                }
             }
             return bf;
         },
         noteToY: function(note) {
-            return upperLeft.y + noteSpacing * (0.5 + topNote - note);
+            return upperLeft.y + noteSpacing * (topNoteLine - note);
+        },
+        noteLineToNote: function(noteLine) {
+            return 
         },
     }
 
@@ -83,6 +122,7 @@ define(['jquery', 'paper'], function($, paperJs) {
                     break;
                 case '1':
                     notes.push(new Note(cursor.t, 1, cursor.note));
+                    break;
             }
         };
 
@@ -102,9 +142,21 @@ define(['jquery', 'paper'], function($, paperJs) {
 
         view.viewSize = [window.innerWidth, window.innerHeight];
 
-        for (var i = 0; i < 24; i++) { // two octaves
+        // Treble clef, i = 0: 698.46 Hz (F5)
+        for (var i = 0; i < 10; i += 2) {
             var path = new Path({
-                strokeColor: 'black',
+                strokeColor: '#aaaaaa',
+            });
+            var p = upperLeft.add([0, noteSpacing * i]);
+            path.add(p);
+            p.x = view.viewSize.width - 100;
+            path.add(p);
+            noteLines.push(path);
+        }
+        // Bass clef, i = 12: 220 Hz (A3)
+        for (var i = 12; i < 22; i += 2) {
+            var path = new Path({
+                strokeColor: '#aaaaaa',
             });
             var p = upperLeft.add([0, noteSpacing * i]);
             path.add(p);
@@ -123,8 +175,8 @@ define(['jquery', 'paper'], function($, paperJs) {
         cursor.hPath = new Path({
             strokeColor: 'red',
         });
-        cursor.hPath.add(upperLeft.add([0, noteSpacing * 0.5]));
-        cursor.hPath.add(upperLeft.add([10, noteSpacing * 0.5]));
+        cursor.hPath.add(upperLeft.add([0, 0]));
+        cursor.hPath.add(upperLeft.add([-10, 0]));
     });
 
     return { };
