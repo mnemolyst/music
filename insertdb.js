@@ -8,16 +8,19 @@ mongo.connect(mongoUrl, function(err, db) {
                 name: 'one',
                 notes: [
                     {
-                        pitch: 440,
-                        duration: 1,
+                        t: 0,
+                        d: 1,
+                        n: 0,
                     },
                     {
-                        pitch: 880,
-                        duration: 1,
+                        t: 0,
+                        d: 1,
+                        n: 12,
                     },
                     {
-                        pitch: 660,
-                        duration: 1,
+                        t: 0,
+                        d: 1,
+                        n: 6,
                     },
                 ],
             },

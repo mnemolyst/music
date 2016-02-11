@@ -1,8 +1,8 @@
 var express = require('express');
 var router = express.Router();
 var requirejs = require('requirejs');
-var mongo =         require('mongodb').MongoClient;
-var ObjectId =      require('mongodb').ObjectID;
+var mongo = require('mongodb').MongoClient;
+var ObjectId = require('mongodb').ObjectID;
 
 var mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/music';
 
@@ -44,6 +44,40 @@ router.get('/composition/:id', function(req, res, next) {
 
             db.close();
         });
+    });
+});
+
+router.post('/composition/:id?', function(req, res, next) {
+    mongo.connect(mongoUrl, function(err, db) {
+        if (req.params.id === undefined) {
+            db.collection('composition').insertOne(
+                req.body,
+                {},
+                function(err, r) {
+                    if (! err && r.result.ok === 1) {
+                        res.status(201).send(r.insertedId);
+                    } else  {
+                        //console.log(err);
+                        res.sendStatus(500);
+                    }
+                    db.close();
+                }
+            );
+        } else {
+            db.collection('composition').replaceOne(
+                {_id: new ObjectId(req.params.id)},
+                req.body,
+                {},
+                function(err, r) {
+                    if (! err && r.result.ok === 1) {
+                        res.status(201).send(String(r.modifiedCount));
+                    } else {
+                        res.sendStatus(500);
+                    }
+                    db.close();
+                }
+            );
+        }
     });
 });
 

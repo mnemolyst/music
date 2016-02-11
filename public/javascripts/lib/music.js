@@ -1,4 +1,5 @@
 define(['jquery', 'paper'], function($, paperJs) {
+    var WindowMouseEvent = window.MouseEvent;
     paperJs.paper.install(this);
 
     var upperLeft = new Point(100, 100);
@@ -37,17 +38,22 @@ define(['jquery', 'paper'], function($, paperJs) {
     keySignatures['e-m'] = keySignatures['g-M'];
     keySignatures['a-m'] = keySignatures['c-M'];
 
-    sfSigns = {
+    var sfSigns = {
         '-1': '\u266d', // flat
         '0': '\u266e', // natural
         '1': '\u266f', // sharp
     };
 
-    var Staff = function(noteLines, sf) {
+    var Staff = function(noteLines, key) {
         this.nln = [0, 2, 3, 5, 7, 8, 10]; // note line notes A-G
-        this.timeSpacing = 10;
-        this.noteLineSpacing = 10;
-        this.paths = [];
+        this.timeSpacing = 15;
+        this.noteLineSpacing = 15;
+        this.noteLines = noteLines;
+        this.keyText = new Group();
+        this.paths = new Group();
+        //this.key = key;
+        //this.sf = keySignatures[key]; // sharps & flats
+        this.setKey(key);
         for (var i = 0; i < noteLines.length; i++) {
             var path = new Path({
                 strokeColor: '#aaaaaa',
@@ -56,10 +62,33 @@ define(['jquery', 'paper'], function($, paperJs) {
             path.add(p);
             p.x = view.viewSize.width - 100;
             path.add(p);
-            this.paths.push(path);
+            this.paths.addChild(path);
         }
-        this.noteLines = noteLines;
-        this.sf = sf; // sharps & flats
+    }
+    Staff.prototype.setKey = function(key) {
+        this.key = key;
+        this.sf = keySignatures[key];
+        this.keyText.removeChildren();
+        // TODO bass clef
+        var lastLeft = null;
+        var shiftRight = false;
+        for (var i = 0; i < this.sf.length; i++) {
+            if (this.sf[i] !== 0) {
+                if (lastLeft === i - 1) {
+                    shiftRight = true;
+                    lastLeft = null;
+                } else {
+                    shiftRight = false
+                    lastLeft = i;
+                }
+                this.keyText.addChild(new PointText({
+                    strokeColor: 'black',
+                    fontSize: 30,
+                    content: sfSigns[this.sf[i]],
+                    position: upperLeft.add([10 + (shiftRight ? 15 : 0), this.lineToY(i)]),
+                }));
+            }
+        }
     }
     Staff.prototype.noteInfo = function(note) {
         var i = 0, noteClass = ((note % 12) + 12) % 12, nlnl = this.nln.length;
@@ -111,7 +140,7 @@ define(['jquery', 'paper'], function($, paperJs) {
             ],
         });
         this.text = new PointText({
-            strokeColor: 'darkblue',
+            strokeColor: 'black',
             fontSize: 14,
             content: sfSigns[noteInfo.sf],
             point: this.path.lastSegment.point.clone(),
@@ -128,29 +157,64 @@ define(['jquery', 'paper'], function($, paperJs) {
         this.text.setContent(sfSigns[noteInfo.sf]);
     }
 
-    var Cursor = function() {
+    var Cursor = function(staff) {
         this.t = 0;
         this.noteLine = 5;
         this.note = 8;
-        this.vPath = null;
-        this.hPath = null;
-        this.setNote = function(note, staff) {
-            this.note = note;
-            this.noteLine = staff.noteToLine(note);
-        }
-        this.setNoteLine = function(noteLine, staff) {
-            this.noteLine = noteLine;
-            this.note = staff.lineToNote(noteLine);
-        }
-        this.update = function(staff) {
-            this.vPath.position.x = upperLeft.x + staff.timeSpacing * (this.t - leftTime);
-            this.vPath.position.y = upperLeft.y;
-            this.hPath.position.x = upperLeft.x - 5 + staff.timeSpacing * (this.t - leftTime);
-            this.hPath.position.y = upperLeft.y + staff.lineToY(this.noteLine);
-        }
+        this.vPath = new Path({
+            strokeColor: 'red',
+            segments: [
+                upperLeft,
+                staff.paths.lastChild.firstSegment.point
+            ],
+            pivot: upperLeft,
+        });
+        this.hPath = new Path({
+            strokeColor: 'red',
+            segments: [
+                upperLeft.add([0, 0]),
+                upperLeft.add([-10, 0])
+            ],
+        });
+    }
+    Cursor.prototype.setNote = function(note, staff) {
+        this.note = note;
+        this.noteLine = staff.noteToLine(note);
+    }
+    Cursor.prototype.setNoteLine = function(noteLine, staff) {
+        this.noteLine = noteLine;
+        this.note = staff.lineToNote(noteLine);
+    }
+    Cursor.prototype.update = function(staff) {
+        this.vPath.position.x = upperLeft.x + staff.timeSpacing * (this.t - leftTime);
+        this.vPath.position.y = upperLeft.y;
+        this.hPath.position.x = upperLeft.x - 5 + staff.timeSpacing * (this.t - leftTime);
+        this.hPath.position.y = upperLeft.y + staff.lineToY(this.noteLine);
     }
 
-    function init() {
+    var Composition = function() {
+        this.name = 'Mine';
+        this.notes = [];
+        this.dbId = null;
+        this.update = function(staff) {
+            for (var i = 0; i < this.notes.length; i++) {
+                this.notes[i].update(staff);
+            }
+        }
+    }
+    Composition.prototype.stringify = function() {
+        var data = {
+            name: this.name,
+            notes: [],
+        };
+        for (var i = 0; i < this.notes.length; i++) {
+            data.notes.push({
+                t: this.notes[i].t,
+                d: this.notes[i].d,
+                n: this.notes[i].note,
+            });
+        }
+        return JSON.stringify(data);
     }
 
     $(document).ready(function() {
@@ -158,14 +222,14 @@ define(['jquery', 'paper'], function($, paperJs) {
         var $canvas = $(canvas);
         paper.setup(canvas);
 
-        var cursor = new Cursor();
-
         var doubleStaff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-            keySignatures['eM']
+            'eM'
         );
 
-        var notes = [];
+        var cursor = new Cursor(doubleStaff);
+
+        var composition = new Composition();
 
         view.onFrame = function(event) {
         }
@@ -175,6 +239,10 @@ define(['jquery', 'paper'], function($, paperJs) {
             switch (event.key) {
                 case 'h':
                     cursor.t--;
+                    if (cursor.t <= leftTime) {
+                        leftTime--;
+                        composition.update(doubleStaff);
+                    }
                     cursor.update(doubleStaff);
                     break;
                 case 'j':
@@ -195,70 +263,119 @@ define(['jquery', 'paper'], function($, paperJs) {
                     break;
                 case 'l':
                     cursor.t++;
+                    if (cursor.t >= leftTime + doubleStaff.paths.bounds.width / doubleStaff.timeSpacing) {
+                        leftTime++;
+                        composition.update(doubleStaff);
+                    }
                     cursor.update(doubleStaff);
                     break;
                 case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8':
                     var note = new Note(cursor.t, Number(event.key), cursor.note, doubleStaff);
-                    notes.push(note);
+                    composition.notes.push(note);
                     note.update(doubleStaff);
                     break;
                 case '+':
-                    
+                    // change key
                     break;
             }
         };
 
         window.onresize = function() {
             view.viewSize = [window.innerWidth, window.innerHeight];
-            for (var i = 0; i < doubleStaff.paths.length; i++) {
-                if (doubleStaff.paths[i].segments.length > 0) {
-                    doubleStaff.paths[i].removeSegments(1);
-                }
-                var p1 = doubleStaff.paths[i].firstSegment.point;
-                var p2 = p1.clone();
-                p2.x = view.viewSize.width - 100;
-                doubleStaff.paths[i].add(p2);
+            //var rect = new Rectangle(upperLeft, view.viewSize.subtract([200, 200]));
+            //doubleStaff.paths.fitBounds(rect);
+            for (var i = 0; i < doubleStaff.paths.children.length; i++) {
+                doubleStaff.paths.children[i].lastSegment.point.x = view.viewSize.width - 100;
             }
+            downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
+            submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
             view.fire('resize', view);
+        }
+
+        var sigLinks = new Group();
+        var sigPos = upperLeft.add([0, doubleStaff.paths.bounds.height + 30]);
+        for (var i in keySignatures) {
+            var sl = new PointText({
+                strokeColor: 'black',
+                fontSize: 20,
+                content: i,
+                point: sigPos,
+            });
+            sl.onClick = (function() {
+                var key = i;
+                return function() {
+                    doubleStaff.setKey(key);
+                    composition.update(doubleStaff);
+                }
+            })()
+            sigLinks.addChild(sl);
+            if (sigLinks.children.length % 8 === 0) {
+                sigPos = doubleStaff.paths.bounds.bottomLeft.add([0, 30 + sigLinks.children.length / 8 * 20]);
+            } else {
+                sigPos = sigPos.add([sl.bounds.width + 10, 0]);
+            }
+        }
+
+        var downloadLink = new PointText({
+            strokeColor: 'black',
+            fontSize: 20,
+            content: 'Download',
+        });
+        downloadLink.onClick = function() {
+            var data = composition.stringify();
+            var a = document.createElement('a');
+            var now = new Date();
+            var dateTime = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate() + '-' + now.getHours() + '-' + now.getMinutes() + '-' + now.getSeconds();
+            a.download = 'composition-' + dateTime + '.json';
+            a.title = 'Download composition';
+            a.href = 'data:text/json,' + data;
+
+            document.querySelector('body').appendChild(a);
+            var clickEvent = new WindowMouseEvent('click', {
+                bubbles: false,
+                cancelable: false,
+                view: window,
+            });
+            a.dispatchEvent(clickEvent);
+        }
+
+        var submitLink = new PointText({
+            strokeColor: 'black',
+            fontSize: 20,
+            content: 'Submit',
+        });
+        submitLink.onClick = function() {
+            var data = composition.stringify();
+            if (composition.dbId) {
+                url = '/composition/' + composition.dbId;
+            } else {
+                url = '/composition';
+            }
+            $.ajax({
+                url: url,
+                method: 'POST',
+                data: data,
+                contentType: 'application/json',
+                success: function(data) {
+                    if (composition.dbId === null) {
+                        composition.dbId = data;
+                    }
+                }
+            });
         }
 
         $(window).trigger('resize');
 
-        //// Treble clef, i = 0: 698.46 Hz (F5)
-        //for (var i = 0; i < 10; i += 2) {
-        //    var path = new Path({
-        //        strokeColor: '#aaaaaa',
-        //    });
-        //    var p = upperLeft.add([0, doubleStaff.noteLineSpacing * i]);
-        //    path.add(p);
-        //    p.x = view.viewSize.width - 100;
-        //    path.add(p);
-        //    noteLines.push(path);
-        //}
-        //// Bass clef, i = 12: 220 Hz (A3)
-        //for (var i = 12; i < 22; i += 2) {
-        //    var path = new Path({
-        //        strokeColor: '#aaaaaa',
-        //    });
-        //    var p = upperLeft.add([0, doubleStaff.noteLineSpacing * i]);
-        //    path.add(p);
-        //    p.x = view.viewSize.width - 100;
-        //    path.add(p);
-        //    noteLines.push(path);
-        //}
-
-        cursor.vPath = new Path({
-            strokeColor: 'red',
-        });
-        cursor.vPath.add(upperLeft);
-        cursor.vPath.add(doubleStaff.paths[doubleStaff.paths.length - 1].firstSegment.point);
-        cursor.vPath.pivot = upperLeft.clone();
-
-        cursor.hPath = new Path({
-            strokeColor: 'red',
-        });
-        cursor.hPath.add(upperLeft.add([0, 0]));
-        cursor.hPath.add(upperLeft.add([-10, 0]));
+        //var AudioContext = window.AudioContext || window.webkitAudioContext;
+        //var audioCtx = new AudioContext();
+        //var oscillator = audioCtx.createOscillator();
+        //oscillator.type = 'sine';
+        //oscillator.frequency.value = 440;
+        //var gainNode = audioCtx.createGain();
+        //oscillator.connect(gainNode);
+        //gainNode.connect(audioCtx.destination);
+        //oscillator.start();
+        //oscillator.stop(1);
     });
 
     return { };
