@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="javascripts/lib/paper-core.js"></script>
+<script type="text/javascript">
+	paper.install(window);
+	window.onload = function() {
+		paper.setup('myCanvas');
+		var path = new Path.Rectangle([75, 75], [100, 100]);
+		path.strokeColor = 'black';
+
+		view.onFrame = function(event) {
+			// On each frame, rotate the path by 3 degrees:
+			path.rotate(3);
+		}
+	}
+    window.onresize = function() {
+        var canvas = document.getElementById('myCanvas');
+        view.viewSize = [window.innerWidth, window.innerHeight];
+        view.fire('resize', view);
+    }
+</script>
+</head>
+<body>
+	<canvas id="myCanvas" resize></canvas>
+</body>
+</html>

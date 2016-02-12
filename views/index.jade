@@ -3,8 +3,8 @@ extends layout
 block content
     .canvas
         canvas(id='canvas')
-    //-.compositions
-    //-    each composition in compositions
-    //-        - var id = composition._id.toString()
-    //-        .composition
-    //-            a(href="javascript:void(null)", data-composition-id=id)= composition.name
+    script
+        | var compositionIds = {
+        each composition in compositions
+            = '\'' + composition.name + '\': \'' + composition._id.toString() + '\','
+        | }

@@ -40,6 +40,7 @@ router.get('/composition/:id', function(req, res, next) {
         db.collection('composition').find({_id: new ObjectId(req.params.id)}).limit(1).next(function(err, doc) {
             if (err) throw err;
 
+            res.type('application/json');
             res.send(JSON.stringify(doc));
 
             db.close();

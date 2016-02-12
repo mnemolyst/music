@@ -1,6 +1,9 @@
-define(['jquery', 'paper'], function($, paperJs) {
+define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     var WindowMouseEvent = window.MouseEvent;
     paperJs.paper.install(this);
+    $.ajaxSetup({cache: false});
+    $nameInput = $('<input>');
+    $nameInput.css('color', 'white');
 
     var upperLeft = new Point(100, 100);
     var leftTime = 0;
@@ -44,21 +47,26 @@ define(['jquery', 'paper'], function($, paperJs) {
         '1': '\u266f', // sharp
     };
 
+    ///////////
+    // Staff //
+    ///////////
     var Staff = function(noteLines, key) {
         this.nln = [0, 2, 3, 5, 7, 8, 10]; // note line notes A-G
         this.timeSpacing = 15;
         this.noteLineSpacing = 15;
-        this.noteLines = noteLines;
         this.keyText = new Group();
         this.paths = new Group();
-        //this.key = key;
-        //this.sf = keySignatures[key]; // sharps & flats
+
+        this.noteLines = noteLines;
         this.setKey(key);
-        for (var i = 0; i < noteLines.length; i++) {
+        this.init();
+    }
+    Staff.prototype.init = function() {
+        for (var i = 0; i < this.noteLines.length; i++) {
             var path = new Path({
                 strokeColor: '#aaaaaa',
             });
-            var p = upperLeft.subtract([0, this.noteLineSpacing * (noteLines[i] - noteLines[0])]);
+            var p = upperLeft.subtract([0, this.noteLineSpacing * (this.noteLines[i] - this.noteLines[0])]);
             path.add(p);
             p.x = view.viewSize.width - 100;
             path.add(p);
@@ -67,13 +75,12 @@ define(['jquery', 'paper'], function($, paperJs) {
     }
     Staff.prototype.setKey = function(key) {
         this.key = key;
-        this.sf = keySignatures[key];
         this.keyText.removeChildren();
         // TODO bass clef
         var lastLeft = null;
         var shiftRight = false;
-        for (var i = 0; i < this.sf.length; i++) {
-            if (this.sf[i] !== 0) {
+        for (var i = 0; i < this.key.length; i++) {
+            if (this.key[i] !== 0) {
                 if (lastLeft === i - 1) {
                     shiftRight = true;
                     lastLeft = null;
@@ -84,7 +91,7 @@ define(['jquery', 'paper'], function($, paperJs) {
                 this.keyText.addChild(new PointText({
                     strokeColor: 'black',
                     fontSize: 30,
-                    content: sfSigns[this.sf[i]],
+                    content: sfSigns[this.key[i]],
                     position: upperLeft.add([10 + (shiftRight ? 15 : 0), this.lineToY(i)]),
                 }));
             }
@@ -93,29 +100,25 @@ define(['jquery', 'paper'], function($, paperJs) {
     Staff.prototype.noteInfo = function(note) {
         var i = 0, noteClass = ((note % 12) + 12) % 12, nlnl = this.nln.length;
         var octave = (note - noteClass) / 12;
-        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.sf[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.sf[i]))
+        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.key[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.key[i])) {
             i++;
+        }
         i = i % nlnl;
 
         return {
-            nl: i + octave * nlnl,
-            sf: noteClass - this.nln[i] - this.sf[i],
+            noteLine: i + octave * nlnl,
+            key: noteClass - this.nln[i] - this.key[i],
             y: (this.noteLines[0] - i - octave * nlnl) * this.noteLineSpacing,
         }
     }
     Staff.prototype.lineToNote = function(line) {
         var lineClass = ((line % this.nln.length) + this.nln.length) % this.nln.length;
         var octave = (line - lineClass) / this.nln.length;
-        return this.nln[lineClass] + this.sf[lineClass] + octave * 12;
+        return this.nln[lineClass] + this.key[lineClass] + octave * 12;
     }
     Staff.prototype.noteToLine = function(note) {
-        var i = 0, noteClass = ((note % 12) + 12) % 12, nlnl = this.nln.length;
-        var octave = (note - noteClass) / 12;
-        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.sf[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.sf[i]))
-            i++;
-        i = i % nlnl;
-
-        return i + octave * nlnl;
+        var noteInfo = this.noteInfo(note);
+        return noteInfo.noteLine;
     }
     Staff.prototype.lineToY = function(line) {
         return (this.noteLines[0] - line) * this.noteLineSpacing;
@@ -124,25 +127,33 @@ define(['jquery', 'paper'], function($, paperJs) {
         var noteLine = this.noteToLine(note);
         return this.lineToY(noteLine);
     }
+    Staff.prototype.remove = function() {
+        this.keyText.remove();
+        this.paths.remove();
+    }
 
+    //////////
+    // Note //
+    //////////
     var Note = function(t, d, note, staff) {
         this.t = t; // start time
         this.d = d; // duration
         this.note = note;
 
         var noteInfo = staff.noteInfo(this.note);
+        var startPoint = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
         this.path = new Path({
             strokeColor: 'blue',
             strokeWidth: 5,
             segments: [
-                [upperLeft.x + staff.timeSpacing * (this.t - leftTime),                              upperLeft.y + noteInfo.y],
-                [upperLeft.x + staff.timeSpacing * (this.t - leftTime) + staff.timeSpacing * this.d, upperLeft.y + noteInfo.y]
+                startPoint,
+                startPoint.add([staff.timeSpacing * this.d, 0])
             ],
         });
         this.text = new PointText({
             strokeColor: 'black',
             fontSize: 14,
-            content: sfSigns[noteInfo.sf],
+            content: sfSigns[noteInfo.key],
             point: this.path.lastSegment.point.clone(),
         });
         this.group = new Group({
@@ -150,62 +161,46 @@ define(['jquery', 'paper'], function($, paperJs) {
             pivot: this.path.firstSegment.point,
         });
     }
-    Note.prototype.update = function(staff) {
+    Note.prototype.refresh = function(staff) {
         var noteInfo = staff.noteInfo(this.note);
-        this.group.position.x = upperLeft.x + staff.timeSpacing * (this.t - leftTime);
-        this.group.position.y = upperLeft.y + noteInfo.y;
-        this.text.setContent(sfSigns[noteInfo.sf]);
+        this.group.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
+        this.text.setContent(sfSigns[noteInfo.key]);
+    }
+    Note.prototype.remove = function() {
+        this.group.remove();
     }
 
-    var Cursor = function(staff) {
-        this.t = 0;
-        this.noteLine = 5;
-        this.note = 8;
-        this.vPath = new Path({
-            strokeColor: 'red',
-            segments: [
-                upperLeft,
-                staff.paths.lastChild.firstSegment.point
-            ],
-            pivot: upperLeft,
+    /////////////////
+    // Composition //
+    /////////////////
+    var Composition = function(name, staff) {
+        this.name = name;
+        this.nameText = new PointText({
+            strokeColor: 'black',
+            fontSize: 20,
+            content: this.name,
+            point: [10, 30],
         });
-        this.hPath = new Path({
-            strokeColor: 'red',
-            segments: [
-                upperLeft.add([0, 0]),
-                upperLeft.add([-10, 0])
-            ],
-        });
-    }
-    Cursor.prototype.setNote = function(note, staff) {
-        this.note = note;
-        this.noteLine = staff.noteToLine(note);
-    }
-    Cursor.prototype.setNoteLine = function(noteLine, staff) {
-        this.noteLine = noteLine;
-        this.note = staff.lineToNote(noteLine);
-    }
-    Cursor.prototype.update = function(staff) {
-        this.vPath.position.x = upperLeft.x + staff.timeSpacing * (this.t - leftTime);
-        this.vPath.position.y = upperLeft.y;
-        this.hPath.position.x = upperLeft.x - 5 + staff.timeSpacing * (this.t - leftTime);
-        this.hPath.position.y = upperLeft.y + staff.lineToY(this.noteLine);
-    }
-
-    var Composition = function() {
-        this.name = 'Mine';
-        this.notes = [];
+        this.nameText.onClick = function() {
+            $nameInput.dialog('open').trigger('focus');
+        }
         this.dbId = null;
-        this.update = function(staff) {
-            for (var i = 0; i < this.notes.length; i++) {
-                this.notes[i].update(staff);
-            }
+        this.staff = staff;
+        this.notes = [];
+    }
+    Composition.prototype.refresh = function() {
+        for (var i = 0; i < this.notes.length; i++) {
+            this.notes[i].refresh(this.staff);
         }
     }
     Composition.prototype.stringify = function() {
         var data = {
             name: this.name,
             notes: [],
+            staff: {
+                noteLines: this.staff.noteLines,
+                key: this.staff.key,
+            },
         };
         for (var i = 0; i < this.notes.length; i++) {
             data.notes.push({
@@ -216,20 +211,107 @@ define(['jquery', 'paper'], function($, paperJs) {
         }
         return JSON.stringify(data);
     }
+    Composition.prototype.remove = function() {
+        this.nameText.remove();
+        for (var i = 0; i < this.notes.length; i++) {
+            this.notes[i].remove();
+        }
+    }
+
+    ////////////
+    // Cursor //
+    ////////////
+    var Cursor = function(composition) {
+        this.composition = composition;
+        this.t = 0;
+        this.setNoteLine(0);
+        this.vPath = new Path({
+            strokeColor: 'red',
+            segments: [
+                composition.staff.paths.bounds.topLeft,
+                composition.staff.paths.bounds.bottomLeft
+            ],
+            pivot: composition.staff.paths.bounds.topLeft,
+        });
+        this.hPath = new Path({
+            strokeColor: 'red',
+            segments: [
+                composition.staff.paths.bounds.topLeft.add([-10, composition.staff.lineToY(this.noteLine)]),
+                composition.staff.paths.bounds.topLeft.add([0,   composition.staff.lineToY(this.noteLine)])
+            ],
+        });
+    }
+    Cursor.prototype.setNote = function(note) {
+        this.note = note;
+        this.noteLine = this.composition.staff.noteToLine(note);
+    }
+    Cursor.prototype.setNoteLine = function(noteLine) {
+        this.noteLine = noteLine;
+        this.note = this.composition.staff.lineToNote(noteLine);
+    }
+    Cursor.prototype.refresh = function() {
+        var staff = this.composition.staff;
+        this.vPath.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), 0]);
+        this.hPath.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime) - 5, staff.lineToY(this.noteLine)]);
+    }
+    Cursor.prototype.remove = function() {
+        this.vPath.remove();
+        this.hPath.remove();
+    }
 
     $(document).ready(function() {
         var canvas = document.getElementById('canvas');
-        var $canvas = $(canvas);
         paper.setup(canvas);
 
-        var doubleStaff = new Staff(
+        var staff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-            'eM'
+            keySignatures['eM']
         );
 
-        var cursor = new Cursor(doubleStaff);
+        var composition = new Composition('Untitled', staff);
 
-        var composition = new Composition();
+        var cursor = new Cursor(composition);
+
+        $nameInput.dialog({
+            autoOpen: false,
+            buttons: {
+                'OK': function() {
+                    composition.name = $nameInput.val();
+                    composition.nameText.content = $nameInput.val();
+                    $nameInput.dialog('close');
+                }
+            },
+            open: function() {
+                $nameInput.val(composition.name);
+            },
+        });
+
+        function loadComposition(id) {
+            $.get({
+                url: '/composition/' + id,
+                dataType: 'json',
+                success: function(data) {
+                    // TODO change in place
+                    if (data.hasOwnProperty('staff') && data['staff'].length === 2) {
+                        staff.remove();
+                        staff = new Staff(data.staff.noteLines, data.staff.key);
+                    }
+                    if (data.hasOwnProperty('notes')) {
+                        composition.remove();
+                        composition = new Composition(data.name, staff);
+                        var notes = [];
+                        for (var i = 0; i < data['notes'].length; i++) {
+                            var note = new Note(data['notes'][i].t, data['notes'][i].d, data['notes'][i].n, staff);
+                            notes.push(note);
+                        }
+                        composition.notes = notes;
+                    }
+                    composition.dbId = id;
+                    cursor.refresh();
+                    composition.refresh();
+                },
+            });
+        }
 
         view.onFrame = function(event) {
         }
@@ -241,38 +323,39 @@ define(['jquery', 'paper'], function($, paperJs) {
                     cursor.t--;
                     if (cursor.t <= leftTime) {
                         leftTime--;
-                        composition.update(doubleStaff);
+                        composition.refresh();
                     }
-                    cursor.update(doubleStaff);
+                    cursor.refresh();
                     break;
                 case 'j':
                     if (event.modifiers.shift) {
-                        cursor.setNote(cursor.note - 1, doubleStaff);
+                        cursor.setNote(cursor.note - 1);
                     } else {
-                        cursor.setNoteLine(cursor.noteLine - 1, doubleStaff);
+                        cursor.setNoteLine(cursor.noteLine - 1);
                     }
-                    cursor.update(doubleStaff);
+                    cursor.refresh();
                     break;
                 case 'k':
                     if (event.modifiers.shift) {
-                        cursor.setNote(cursor.note + 1, doubleStaff);
+                        cursor.setNote(cursor.note + 1);
                     } else {
-                        cursor.setNoteLine(cursor.noteLine + 1, doubleStaff);
+                        cursor.setNoteLine(cursor.noteLine + 1);
                     }
-                    cursor.update(doubleStaff);
+                    cursor.refresh();
                     break;
                 case 'l':
                     cursor.t++;
-                    if (cursor.t >= leftTime + doubleStaff.paths.bounds.width / doubleStaff.timeSpacing) {
+                    if (cursor.t >= leftTime + staff.paths.bounds.width / staff.timeSpacing) {
                         leftTime++;
-                        composition.update(doubleStaff);
+                        composition.refresh();
                     }
-                    cursor.update(doubleStaff);
+                    cursor.refresh();
                     break;
                 case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8':
-                    var note = new Note(cursor.t, Number(event.key), cursor.note, doubleStaff);
-                    composition.notes.push(note);
-                    note.update(doubleStaff);
+                    if (! $nameInput.dialog('isOpen')) {
+                        var note = new Note(cursor.t, Number(event.key), cursor.note, staff);
+                        composition.notes.push(note);
+                    }
                     break;
                 case '+':
                     // change key
@@ -282,39 +365,66 @@ define(['jquery', 'paper'], function($, paperJs) {
 
         window.onresize = function() {
             view.viewSize = [window.innerWidth, window.innerHeight];
-            //var rect = new Rectangle(upperLeft, view.viewSize.subtract([200, 200]));
-            //doubleStaff.paths.fitBounds(rect);
-            for (var i = 0; i < doubleStaff.paths.children.length; i++) {
-                doubleStaff.paths.children[i].lastSegment.point.x = view.viewSize.width - 100;
+            for (var i = 0; i < staff.paths.children.length; i++) {
+                staff.paths.children[i].lastSegment.point.x = view.viewSize.width - 100;
             }
+            sigLinks.position = staff.paths.bounds.bottomLeft.add([0, 30]);
+            compositionLinks.position = staff.paths.bounds.bottomRight.add([0, 30]);
             downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
             view.fire('resize', view);
         }
 
         var sigLinks = new Group();
-        var sigPos = upperLeft.add([0, doubleStaff.paths.bounds.height + 30]);
+        var iterPos = new Point(0, 0);
         for (var i in keySignatures) {
-            var sl = new PointText({
+            var pt = new PointText({
                 strokeColor: 'black',
                 fontSize: 20,
                 content: i,
-                point: sigPos,
+                point: iterPos,
             });
-            sl.onClick = (function() {
-                var key = i;
+            pt.onClick = (function() {
+                var idx = i;
                 return function() {
-                    doubleStaff.setKey(key);
-                    composition.update(doubleStaff);
+                    staff.setKey(keySignatures[idx]);
+                    composition.refresh();
                 }
             })()
-            sigLinks.addChild(sl);
+            sigLinks.addChild(pt);
             if (sigLinks.children.length % 8 === 0) {
-                sigPos = doubleStaff.paths.bounds.bottomLeft.add([0, 30 + sigLinks.children.length / 8 * 20]);
+                iterPos = iterPos.add([0, pt.bounds.height + 5]);
+                iterPos.x = 0;
             } else {
-                sigPos = sigPos.add([sl.bounds.width + 10, 0]);
+                iterPos = iterPos.add([pt.bounds.width + 10, 0]);
             }
         }
+        sigLinks.pivot = sigLinks.bounds.topLeft;
+
+        var compositionLinks = new Group();
+        var iterPos = new Point(0, 0);
+        for (var i in compositionIds) {
+            var pt = new PointText({
+                strokeColor: 'black',
+                fontSize: 20,
+                content: i,
+                point: iterPos,
+            });
+            pt.onClick = (function() {
+                var idx = compositionIds[i];
+                return function() {
+                    loadComposition(idx);
+                }
+            })()
+            compositionLinks.addChild(pt);
+            if (compositionLinks.children.length % 8 === 0) {
+                iterPos = iterPos.add([0, pt.bounds.height + 5]);
+                iterPos.x = 0;
+            } else {
+                iterPos = iterPos.add([pt.bounds.width + 10, 0]);
+            }
+        }
+        compositionLinks.pivot = compositionLinks.bounds.topRight;
 
         var downloadLink = new PointText({
             strokeColor: 'black',
