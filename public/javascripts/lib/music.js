@@ -5,7 +5,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     $nameInput = $('<input>');
     $nameInput.css('color', 'white');
 
-    var upperLeft = new Point(100, 100);
+    var upperLeft = new Point(10, 100);
     var leftTime = 0;
 
     var keySignatures = {
@@ -50,37 +50,56 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     ///////////
     // Staff //
     ///////////
-    var Staff = function(noteLines, key) {
+    var Staff = function(noteLines, keySig, timeDiv) {
         this.nln = [0, 2, 3, 5, 7, 8, 10]; // note line notes A-G
-        this.timeSpacing = 15;
+        this.timeSpacing = 15; // (px / beat)
         this.noteLineSpacing = 15;
         this.keyText = new Group();
-        this.paths = new Group();
+        this.hPaths = new Group();
+        this.vPaths = new Group();
+        this.paths = new Group({
+            children: [this.hPaths, this.vPaths],
+        });
 
         this.noteLines = noteLines;
-        this.setKey(key);
-        this.init();
+        this.setKey(keySig);
+        this.timeDiv = timeDiv; // (beats / measure)
     }
-    Staff.prototype.init = function() {
+    Staff.prototype.refresh = function() {
+        this.hPaths.removeChildren();
+        this.vPaths.removeChildren();
+
         for (var i = 0; i < this.noteLines.length; i++) {
             var path = new Path({
                 strokeColor: '#aaaaaa',
             });
-            var p = upperLeft.subtract([0, this.noteLineSpacing * (this.noteLines[i] - this.noteLines[0])]);
+            var p = upperLeft.add([0, this.noteLineSpacing * (this.noteLines[0] - this.noteLines[i])]);
             path.add(p);
-            p.x = view.viewSize.width - 100;
+            p.x = view.bounds.width - 10;
             path.add(p);
-            this.paths.addChild(path);
+            this.hPaths.addChild(path);
         }
+        //var ppm = this.timeSpacing * this.timeDiv; // (px / measure)
+        //var startX = (leftTime * this.timeSpacing) % ppm;
+        //console.log('startX ' + startX);
+        //for (var i = 0; i < this.hPaths.bounds.width / ppm; i++) {
+        //    var path = new Path({
+        //        strokeColor: '#aaaaaa',
+        //    });
+        //    var p = upperLeft.add([startX + i * ppm, 0]);
+        //    path.add(p);
+        //    path.add(p.add([0, this.hPaths.bounds.height]));
+        //    this.vPaths.addChild(path);
+        //}
     }
-    Staff.prototype.setKey = function(key) {
-        this.key = key;
+    Staff.prototype.setKey = function(keySig) {
+        this.keySig = keySig;
         this.keyText.removeChildren();
         // TODO bass clef
         var lastLeft = null;
         var shiftRight = false;
-        for (var i = 0; i < this.key.length; i++) {
-            if (this.key[i] !== 0) {
+        for (var i = 0; i < this.keySig.length; i++) {
+            if (this.keySig[i] !== 0) {
                 if (lastLeft === i - 1) {
                     shiftRight = true;
                     lastLeft = null;
@@ -91,7 +110,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 this.keyText.addChild(new PointText({
                     strokeColor: 'black',
                     fontSize: 30,
-                    content: sfSigns[this.key[i]],
+                    content: sfSigns[this.keySig[i]],
                     position: upperLeft.add([10 + (shiftRight ? 15 : 0), this.lineToY(i)]),
                 }));
             }
@@ -100,21 +119,21 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     Staff.prototype.noteInfo = function(note) {
         var i = 0, noteClass = ((note % 12) + 12) % 12, nlnl = this.nln.length;
         var octave = (note - noteClass) / 12;
-        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.key[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.key[i])) {
+        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.keySig[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.keySig[i])) {
             i++;
         }
         i = i % nlnl;
 
         return {
             noteLine: i + octave * nlnl,
-            key: noteClass - this.nln[i] - this.key[i],
+            sf: noteClass - this.nln[i] - this.keySig[i],
             y: (this.noteLines[0] - i - octave * nlnl) * this.noteLineSpacing,
         }
     }
     Staff.prototype.lineToNote = function(line) {
         var lineClass = ((line % this.nln.length) + this.nln.length) % this.nln.length;
         var octave = (line - lineClass) / this.nln.length;
-        return this.nln[lineClass] + this.key[lineClass] + octave * 12;
+        return this.nln[lineClass] + this.keySig[lineClass] + octave * 12;
     }
     Staff.prototype.noteToLine = function(note) {
         var noteInfo = this.noteInfo(note);
@@ -141,7 +160,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.note = note;
 
         var noteInfo = staff.noteInfo(this.note);
-        var startPoint = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
+        var startPoint = staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
         this.path = new Path({
             strokeColor: 'blue',
             strokeWidth: 5,
@@ -153,7 +172,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.text = new PointText({
             strokeColor: 'black',
             fontSize: 14,
-            content: sfSigns[noteInfo.key],
+            content: sfSigns[noteInfo.sf],
             point: this.path.lastSegment.point.clone(),
         });
         this.group = new Group({
@@ -163,8 +182,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     Note.prototype.refresh = function(staff) {
         var noteInfo = staff.noteInfo(this.note);
-        this.group.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
-        this.text.setContent(sfSigns[noteInfo.key]);
+        this.group.position = staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
+        this.text.setContent(sfSigns[noteInfo.sf]);
     }
     Note.prototype.remove = function() {
         this.group.remove();
@@ -199,7 +218,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             notes: [],
             staff: {
                 noteLines: this.staff.noteLines,
-                key: this.staff.key,
+                keySig: this.staff.keySig,
+                timeDiv: this.staff.timeDiv,
             },
         };
         for (var i = 0; i < this.notes.length; i++) {
@@ -228,16 +248,16 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.vPath = new Path({
             strokeColor: 'red',
             segments: [
-                composition.staff.paths.bounds.topLeft,
-                composition.staff.paths.bounds.bottomLeft
+                composition.staff.hPaths.bounds.topLeft,
+                composition.staff.hPaths.bounds.bottomLeft
             ],
-            pivot: composition.staff.paths.bounds.topLeft,
+            //pivot: composition.staff.hPaths.bounds.topLeft,
         });
         this.hPath = new Path({
             strokeColor: 'red',
             segments: [
-                composition.staff.paths.bounds.topLeft.add([-10, composition.staff.lineToY(this.noteLine)]),
-                composition.staff.paths.bounds.topLeft.add([0,   composition.staff.lineToY(this.noteLine)])
+                composition.staff.hPaths.bounds.topLeft.add([-10, composition.staff.lineToY(this.noteLine)]),
+                composition.staff.hPaths.bounds.topLeft.add([0,   composition.staff.lineToY(this.noteLine)])
             ],
         });
     }
@@ -251,8 +271,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     Cursor.prototype.refresh = function() {
         var staff = this.composition.staff;
-        this.vPath.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), 0]);
-        this.hPath.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime) - 5, staff.lineToY(this.noteLine)]);
+        this.vPath.position.x = staff.hPaths.bounds.topLeft.x + staff.timeSpacing * (this.t - leftTime);
+        this.vPath.position.y = staff.hPaths.bounds.topLeft.y;
+        this.hPath.position.x = staff.hPaths.bounds.topLeft.x + staff.timeSpacing * (this.t - leftTime) - 5;
+        this.hPath.position.y = staff.hPaths.bounds.topLeft.y + staff.lineToY(this.noteLine);
     }
     Cursor.prototype.remove = function() {
         this.vPath.remove();
@@ -265,7 +287,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var staff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-            keySignatures['eM']
+            keySignatures['eM'],
+            4
         );
 
         var composition = new Composition('Untitled', staff);
@@ -294,7 +317,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     // TODO change in place
                     if (data.hasOwnProperty('staff') && data['staff'].length === 2) {
                         staff.remove();
-                        staff = new Staff(data.staff.noteLines, data.staff.key);
+                        staff = new Staff(data.staff.noteLines, data.staff.keySig, data.staff.timeDiv);
                     }
                     if (data.hasOwnProperty('notes')) {
                         composition.remove();
@@ -320,10 +343,13 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         tool.onKeyDown = function(event) {
             switch (event.key) {
                 case 'h':
-                    cursor.t--;
-                    if (cursor.t <= leftTime) {
+                    if (cursor.t >= 1) {
+                        cursor.t--;
+                    }
+                    if (cursor.t <= leftTime && cursor.t > 0) {
                         leftTime--;
                         composition.refresh();
+                        staff.refresh();
                     }
                     cursor.refresh();
                     break;
@@ -345,10 +371,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     break;
                 case 'l':
                     cursor.t++;
-                    if (cursor.t >= leftTime + staff.paths.bounds.width / staff.timeSpacing) {
+                    if (cursor.t >= leftTime + staff.hPaths.bounds.width / staff.timeSpacing) {
                         leftTime++;
                         composition.refresh();
+                        staff.refresh();
                     }
+                    cursor.refresh();
+                    break;
+                case '0':
+                    cursor.t = 0;
+                    leftTime = 0;
+                    composition.refresh();
+                    staff.refresh();
                     cursor.refresh();
                     break;
                 case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8':
@@ -357,19 +391,42 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         composition.notes.push(note);
                     }
                     break;
-                case '+':
-                    // change key
+                case 'x':
+                    var idx = composition.notes.findIndex(function(el) {
+                        return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
+                    });
+                    if (idx !== -1) {
+                        composition.notes[idx].remove();
+                        composition.notes.splice(idx, 1);
+                    }
+                    break;
+                case '/':
+                    var idx = composition.notes.findIndex(function(el) {
+                        return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
+                    });
+                    if (idx !== -1) {
+                        var oldNote = composition.notes[idx];
+                        var oldNoteD3 = oldNote.d / 3;
+                        var newNotes = [];
+                        for (var i = 0; i < 3; i++) {
+                            var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, staff);
+                            newNotes.push(newNote);
+                        }
+                        console.log(composition.notes);
+                        composition.notes[idx].remove();
+                        composition.notes.splice(idx, 1, newNotes[0], newNotes[1], newNotes[2]);
+                        console.log(composition.notes);
+                    }
                     break;
             }
+            //console.log(event.key);
         };
 
         window.onresize = function() {
             view.viewSize = [window.innerWidth, window.innerHeight];
-            for (var i = 0; i < staff.paths.children.length; i++) {
-                staff.paths.children[i].lastSegment.point.x = view.viewSize.width - 100;
-            }
-            sigLinks.position = staff.paths.bounds.bottomLeft.add([0, 30]);
-            compositionLinks.position = staff.paths.bounds.bottomRight.add([0, 30]);
+            staff.refresh();
+            sigLinks.position = staff.hPaths.bounds.bottomLeft.add([0, 30]);
+            compositionLinks.position = staff.hPaths.bounds.bottomRight.add([0, 30]);
             downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
             view.fire('resize', view);
