@@ -79,18 +79,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             path.add(p);
             this.hPaths.addChild(path);
         }
-        //var ppm = this.timeSpacing * this.timeDiv; // (px / measure)
-        //var startX = (leftTime * this.timeSpacing) % ppm;
-        //console.log('startX ' + startX);
-        //for (var i = 0; i < this.hPaths.bounds.width / ppm; i++) {
-        //    var path = new Path({
-        //        strokeColor: '#aaaaaa',
-        //    });
-        //    var p = upperLeft.add([startX + i * ppm, 0]);
-        //    path.add(p);
-        //    path.add(p.add([0, this.hPaths.bounds.height]));
-        //    this.vPaths.addChild(path);
-        //}
+
+        var ppm = this.timeSpacing * this.timeDiv; // (px / measure)
+        var startX = ppm - (leftTime * this.timeSpacing) % ppm;
+        for (var i = 0; i < this.hPaths.bounds.width / ppm; i++) {
+            var path = new Path({
+                strokeColor: '#aaaaaa',
+            });
+            var p = upperLeft.add([startX + i * ppm, 0]);
+            path.add(p);
+            path.add(p.add([0, this.hPaths.bounds.height]));
+            this.vPaths.addChild(path);
+        }
     }
     Staff.prototype.setKey = function(keySig) {
         this.keySig = keySig;
@@ -247,17 +247,12 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.setNoteLine(0);
         this.vPath = new Path({
             strokeColor: 'red',
-            segments: [
-                composition.staff.hPaths.bounds.topLeft,
-                composition.staff.hPaths.bounds.bottomLeft
-            ],
-            //pivot: composition.staff.hPaths.bounds.topLeft,
         });
         this.hPath = new Path({
             strokeColor: 'red',
             segments: [
-                composition.staff.hPaths.bounds.topLeft.add([-10, composition.staff.lineToY(this.noteLine)]),
-                composition.staff.hPaths.bounds.topLeft.add([0,   composition.staff.lineToY(this.noteLine)])
+                [0, 0],
+                [10, 0]
             ],
         });
     }
@@ -271,8 +266,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     Cursor.prototype.refresh = function() {
         var staff = this.composition.staff;
-        this.vPath.position.x = staff.hPaths.bounds.topLeft.x + staff.timeSpacing * (this.t - leftTime);
-        this.vPath.position.y = staff.hPaths.bounds.topLeft.y;
+        this.vPath.segments = [
+            staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), 0]),
+            staff.hPaths.bounds.bottomLeft.add([staff.timeSpacing * (this.t - leftTime), 0])
+        ],
         this.hPath.position.x = staff.hPaths.bounds.topLeft.x + staff.timeSpacing * (this.t - leftTime) - 5;
         this.hPath.position.y = staff.hPaths.bounds.topLeft.y + staff.lineToY(this.noteLine);
     }
@@ -288,7 +285,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         var staff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
             keySignatures['eM'],
-            4
+            16
         );
 
         var composition = new Composition('Untitled', staff);
@@ -344,13 +341,15 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             switch (event.key) {
                 case 'h':
                     if (cursor.t >= 1) {
-                        cursor.t--;
+                        cursor.t = Math.ceil(cursor.t - 1);
                     }
                     if (cursor.t <= leftTime && cursor.t > 0) {
-                        leftTime--;
+                        leftTime = cursor.t - 1;
                         composition.refresh();
                         staff.refresh();
                     }
+                    //console.log('t ' + cursor.t);
+                    //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
                     cursor.refresh();
                     break;
                 case 'j':
@@ -370,19 +369,61 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.refresh();
                     break;
                 case 'l':
-                    cursor.t++;
-                    if (cursor.t >= leftTime + staff.hPaths.bounds.width / staff.timeSpacing) {
-                        leftTime++;
+                    cursor.t = Math.floor(cursor.t + 1);
+                    if ((cursor.t - leftTime) * staff.timeSpacing >= staff.hPaths.bounds.width) {
+                        leftTime = cursor.t - staff.hPaths.bounds.width / staff.timeSpacing;
                         composition.refresh();
                         staff.refresh();
                     }
+                    //console.log('t ' + cursor.t);
+                    //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
                     cursor.refresh();
+                    break;
+                case 'n':
+                    if (event.modifiers.shift) {
+                        var sortFunc = function(a, b) { return b.t - a.t; }
+                        var findFunc = function(el, idx, arr) { return (cursor.t > el.t) && (idx === 0 || cursor.t <= arr[idx - 1].t) && (el.note === cursor.note); }
+                    } else {
+                        var sortFunc = function(a, b) { return a.t - b.t; }
+                        var findFunc = function(el, idx, arr) { return (cursor.t < el.t) && (idx === 0 || cursor.t >= arr[idx - 1].t) && (el.note === cursor.note); }
+                    }
+
+                    composition.notes.sort(sortFunc);
+                    composition.notes.sort(function(a, b) {
+                        if (a.note === cursor.note) return -1;
+                        else if (b.note === cursor.note) return 1;
+                        else return 0;
+                    });
+                    var idx = composition.notes.findIndex(findFunc);
+
+                    if (idx !== -1) {
+                        cursor.t = composition.notes[idx].t;
+                        if ((cursor.t - leftTime) * staff.timeSpacing >= staff.hPaths.bounds.width) {
+                            leftTime = cursor.t - staff.hPaths.bounds.width / staff.timeSpacing;
+                            composition.refresh();
+                            staff.refresh();
+                        }
+                        if (cursor.t <= leftTime) {
+                            leftTime = cursor.t - (cursor.t === 0 ? 0 : 1);
+                            composition.refresh();
+                            staff.refresh();
+                        }
+                        cursor.refresh();
+                    }
                     break;
                 case '0':
                     cursor.t = 0;
                     leftTime = 0;
                     composition.refresh();
                     staff.refresh();
+                    cursor.refresh();
+                    break;
+                case '^':
+                    cursor.t = Math.floor(leftTime + 1)
+                    cursor.refresh();
+                    break;
+                case '$':
+                    cursor.t = Math.floor(leftTime + staff.hPaths.bounds.width / staff.timeSpacing);
                     cursor.refresh();
                     break;
                 case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8':
@@ -412,10 +453,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                             var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, staff);
                             newNotes.push(newNote);
                         }
-                        console.log(composition.notes);
                         composition.notes[idx].remove();
                         composition.notes.splice(idx, 1, newNotes[0], newNotes[1], newNotes[2]);
-                        console.log(composition.notes);
                     }
                     break;
             }
@@ -424,12 +463,14 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         window.onresize = function() {
             view.viewSize = [window.innerWidth, window.innerHeight];
+            view.fire('resize', view);
             staff.refresh();
+            composition.refresh();
+            cursor.refresh();
             sigLinks.position = staff.hPaths.bounds.bottomLeft.add([0, 30]);
             compositionLinks.position = staff.hPaths.bounds.bottomRight.add([0, 30]);
             downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
-            view.fire('resize', view);
         }
 
         var sigLinks = new Group();
@@ -460,17 +501,17 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var compositionLinks = new Group();
         var iterPos = new Point(0, 0);
-        for (var i in compositionIds) {
+        for (var i = 0; i < dbCompositions.length; i++) {
             var pt = new PointText({
                 strokeColor: 'black',
                 fontSize: 20,
-                content: i,
+                content: dbCompositions[i].name,
                 point: iterPos,
             });
             pt.onClick = (function() {
-                var idx = compositionIds[i];
+                var id = dbCompositions[i].id;
                 return function() {
-                    loadComposition(idx);
+                    loadComposition(id);
                 }
             })()
             compositionLinks.addChild(pt);

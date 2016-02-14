@@ -4,7 +4,10 @@ block content
     .canvas
         canvas(id='canvas')
     script
-        | var compositionIds = {
+        | var dbCompositions = [
         each composition in compositions
-            = '\'' + composition.name + '\': \'' + composition._id.toString() + '\','
-        | }
+            | {
+            = 'name: \'' + composition.name + '\','
+            = 'id: \'' + composition._id.toString() + '\''
+            | },
+        | ]
