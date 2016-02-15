@@ -5,7 +5,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     $nameInput = $('<input>');
     $nameInput.css('color', 'white');
 
-    var upperLeft = new Point(10, 100);
+    var upperLeft = new Point(10, 200);
     var leftTime = 0;
 
     var keySignatures = {
@@ -55,6 +55,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.timeSpacing = 15; // (px / beat)
         this.noteLineSpacing = 15;
         this.keyText = new Group();
+        this.timeText = new Group();
         this.hPaths = new Group();
         this.vPaths = new Group();
         this.paths = new Group({
@@ -65,9 +66,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.setKey(keySig);
         this.timeDiv = timeDiv; // (beats / measure)
     }
-    Staff.prototype.refresh = function() {
+    Staff.prototype.hRefresh = function() {
         this.hPaths.removeChildren();
-        this.vPaths.removeChildren();
 
         for (var i = 0; i < this.noteLines.length; i++) {
             var path = new Path({
@@ -79,6 +79,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             path.add(p);
             this.hPaths.addChild(path);
         }
+    }
+    Staff.prototype.vRefresh = function() {
+        this.vPaths.removeChildren();
+        this.timeText.removeChildren();
 
         var ppm = this.timeSpacing * this.timeDiv; // (px / measure)
         var startX = ppm - (leftTime * this.timeSpacing) % ppm;
@@ -90,7 +94,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             path.add(p);
             path.add(p.add([0, this.hPaths.bounds.height]));
             this.vPaths.addChild(path);
+
+            this.timeText.addChild(new PointText({
+                strokeColor: 'black',
+                fontSize: 20,
+                content: Math.floor(leftTime / this.timeDiv) + i + 1,
+                position: upperLeft.add([startX + i * ppm, -15]),
+            }));
         }
+    }
+    Staff.prototype.refresh = function() {
+        this.hRefresh();
+        this.vRefresh();
     }
     Staff.prototype.setKey = function(keySig) {
         this.keySig = keySig;
@@ -184,6 +199,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         var noteInfo = staff.noteInfo(this.note);
         this.group.position = staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
         this.text.setContent(sfSigns[noteInfo.sf]);
+        this.path.lastSegment.point.x = this.path.firstSegment.point.x + staff.timeSpacing * this.d;
+        this.text.point = this.path.lastSegment.point.clone();
     }
     Note.prototype.remove = function() {
         this.group.remove();
@@ -192,7 +209,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     /////////////////
     // Composition //
     /////////////////
-    var Composition = function(name, staff) {
+    var Composition = function(name, staff, dbId) {
         this.name = name;
         this.nameText = new PointText({
             strokeColor: 'black',
@@ -203,9 +220,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.nameText.onClick = function() {
             $nameInput.dialog('open').trigger('focus');
         }
-        this.dbId = null;
+        this.dbId = dbId || null;
         this.staff = staff;
         this.notes = [];
+        this.tempo = 12;
     }
     Composition.prototype.refresh = function() {
         for (var i = 0; i < this.notes.length; i++) {
@@ -247,9 +265,11 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.setNoteLine(0);
         this.vPath = new Path({
             strokeColor: 'red',
+            strokeWidth: 1.5,
         });
         this.hPath = new Path({
             strokeColor: 'red',
+            strokeWidth: 1.5,
             segments: [
                 [0, 0],
                 [10, 0]
@@ -284,8 +304,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var staff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-            keySignatures['eM'],
-            16
+            keySignatures['am'],
+            12
         );
 
         var composition = new Composition('Untitled', staff);
@@ -312,23 +332,23 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 dataType: 'json',
                 success: function(data) {
                     // TODO change in place
-                    if (data.hasOwnProperty('staff') && data['staff'].length === 2) {
+                    if (data.hasOwnProperty('staff')) {
                         staff.remove();
                         staff = new Staff(data.staff.noteLines, data.staff.keySig, data.staff.timeDiv);
+                        staff.refresh();
                     }
                     if (data.hasOwnProperty('notes')) {
                         composition.remove();
-                        composition = new Composition(data.name, staff);
+                        composition = new Composition(data.name, staff, id);
                         var notes = [];
                         for (var i = 0; i < data['notes'].length; i++) {
                             var note = new Note(data['notes'][i].t, data['notes'][i].d, data['notes'][i].n, staff);
                             notes.push(note);
                         }
                         composition.notes = notes;
+                        composition.refresh();
                     }
-                    composition.dbId = id;
                     cursor.refresh();
-                    composition.refresh();
                 },
             });
         }
@@ -340,13 +360,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         tool.onKeyDown = function(event) {
             switch (event.key) {
                 case 'h':
-                    if (cursor.t >= 1) {
+                    if (cursor.t === 0) {
+                        break;
+                    }
+                    if (event.modifiers.shift) {
+                        cursor.t = Math.floor((cursor.t - 1) / staff.timeDiv) * staff.timeDiv;
+                    } else {
                         cursor.t = Math.ceil(cursor.t - 1);
                     }
-                    if (cursor.t <= leftTime && cursor.t > 0) {
-                        leftTime = cursor.t - 1;
+                    if (cursor.t <= leftTime) {
+                        leftTime = cursor.t - (cursor.t === 0 ? 0 : 1);
                         composition.refresh();
-                        staff.refresh();
+                        staff.vRefresh();
                     }
                     //console.log('t ' + cursor.t);
                     //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
@@ -369,11 +394,15 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.refresh();
                     break;
                 case 'l':
-                    cursor.t = Math.floor(cursor.t + 1);
+                    if (event.modifiers.shift) {
+                        cursor.t = Math.floor(cursor.t / staff.timeDiv + 1) * staff.timeDiv;
+                    } else {
+                        cursor.t = Math.floor(cursor.t + 1);
+                    }
                     if ((cursor.t - leftTime) * staff.timeSpacing >= staff.hPaths.bounds.width) {
                         leftTime = cursor.t - staff.hPaths.bounds.width / staff.timeSpacing;
                         composition.refresh();
-                        staff.refresh();
+                        staff.vRefresh();
                     }
                     //console.log('t ' + cursor.t);
                     //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
@@ -388,25 +417,37 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         var findFunc = function(el, idx, arr) { return (cursor.t < el.t) && (idx === 0 || cursor.t >= arr[idx - 1].t) && (el.note === cursor.note); }
                     }
 
-                    composition.notes.sort(sortFunc);
-                    composition.notes.sort(function(a, b) {
-                        if (a.note === cursor.note) return -1;
-                        else if (b.note === cursor.note) return 1;
-                        else return 0;
+                    var filtered = composition.notes.filter(function(el) {
+                        return el.note === cursor.note;
                     });
-                    var idx = composition.notes.findIndex(findFunc);
+                    filtered.sort(sortFunc);
+                    var idx = filtered.findIndex(findFunc);
 
                     if (idx !== -1) {
-                        cursor.t = composition.notes[idx].t;
+                        cursor.t = filtered[idx].t;
                         if ((cursor.t - leftTime) * staff.timeSpacing >= staff.hPaths.bounds.width) {
                             leftTime = cursor.t - staff.hPaths.bounds.width / staff.timeSpacing;
                             composition.refresh();
-                            staff.refresh();
+                            staff.vRefresh();
                         }
                         if (cursor.t <= leftTime) {
                             leftTime = cursor.t - (cursor.t === 0 ? 0 : 1);
                             composition.refresh();
-                            staff.refresh();
+                            staff.vRefresh();
+                        }
+                        cursor.refresh();
+                    }
+                    break;
+                case 'e':
+                    var idx = composition.notes.findIndex(function(el) {
+                        return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
+                    });
+                    if (idx !== -1 && composition.notes[idx].d > 1) {
+                        cursor.t = composition.notes[idx].t + composition.notes[idx].d;
+                        if ((cursor.t - leftTime) * staff.timeSpacing >= staff.hPaths.bounds.width) {
+                            leftTime = cursor.t - staff.hPaths.bounds.width / staff.timeSpacing;
+                            composition.refresh();
+                            staff.vRefresh();
                         }
                         cursor.refresh();
                     }
@@ -415,7 +456,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.t = 0;
                     leftTime = 0;
                     composition.refresh();
-                    staff.refresh();
+                    staff.vRefresh();
                     cursor.refresh();
                     break;
                 case '^':
@@ -426,10 +467,28 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.t = Math.floor(leftTime + staff.hPaths.bounds.width / staff.timeSpacing);
                     cursor.refresh();
                     break;
-                case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8':
+                case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
                     if (! $nameInput.dialog('isOpen')) {
                         var note = new Note(cursor.t, Number(event.key), cursor.note, staff);
                         composition.notes.push(note);
+                    }
+                    break;
+                case '-':
+                    var idx = composition.notes.findIndex(function(el) {
+                        return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
+                    });
+                    if (idx !== -1 && composition.notes[idx].d > 1) {
+                        composition.notes[idx].d--;
+                        composition.notes[idx].refresh(composition.staff);
+                    }
+                    break;
+                case '+':
+                    var idx = composition.notes.findIndex(function(el) {
+                        return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
+                    });
+                    if (idx !== -1) {
+                        composition.notes[idx].d++;
+                        composition.notes[idx].refresh(composition.staff);
                     }
                     break;
                 case 'x':
@@ -471,6 +530,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             compositionLinks.position = staff.hPaths.bounds.bottomRight.add([0, 30]);
             downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
+            progressBar.position = submitLink.bounds.rightCenter.add([5, 0]);
+            playLink.point = submitLink.bounds.topLeft.add([0, -5]);
         }
 
         var sigLinks = new Group();
@@ -485,6 +546,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             pt.onClick = (function() {
                 var idx = i;
                 return function() {
+                    sigLinks.strokeColor = 'black';
+                    this.strokeColor = 'red';
                     staff.setKey(keySignatures[idx]);
                     composition.refresh();
                 }
@@ -552,7 +615,17 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             fontSize: 20,
             content: 'Submit',
         });
+        var progressBar = new Path({
+            strokeColor: 'red',
+            strokeWidth: 10,
+            segments: [
+                submitLink.bounds.rightCenter.add([5, 0]),
+                submitLink.bounds.rightCenter.add([5, 0])
+            ],
+            pivot: submitLink.bounds.rightCenter.add([5, 0]),
+        });
         submitLink.onClick = function() {
+            progressBar.lastSegment.point = progressBar.firstSegment.point.clone();
             var data = composition.stringify();
             if (composition.dbId) {
                 url = '/composition/' + composition.dbId;
@@ -564,6 +637,16 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 method: 'POST',
                 data: data,
                 contentType: 'application/json',
+                xhr: function() {
+                    var xhr = new window.XMLHttpRequest();
+                    xhr.upload.addEventListener('progress', function(e) {
+                        if (e.lengthComputable) {
+                            var pc = e.loaded / e.total * submitLink.bounds.width;
+                            progressBar.lastSegment.point = progressBar.firstSegment.point.add([pc, 0]);
+                        }
+                    });
+                    return xhr;
+                },
                 success: function(data) {
                     if (composition.dbId === null) {
                         composition.dbId = data;
@@ -572,18 +655,86 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             });
         }
 
+        var playLink = new PointText({
+            strokeColor: 'black',
+            fontSize: 20,
+            content: 'Play',
+        });
+        playLink.onClick = function() {
+            //var params = composition.notes.reduce(function(prev, curr) {
+            //    if (prev.low === null || curr.note < prev.low) {
+            //        prev.low = curr.note;
+            //    }
+            //    if (prev.high === null || prev.high < curr.note) {
+            //        prev.high = curr.note;
+            //    }
+            //    if (prev.len === null || prev.len < curr.t + curr.d) {
+            //        prev.len = curr.t + curr.d;
+            //    }
+            //    return prev;
+            //}, {low:null, high:null, len:null});
+            composition.notes.sort(function(a, b) {
+                return (b.t + b.d) - (a.t + a.d);
+            });
+            var lastNote = composition.notes[0];
+            var offlineCtx = new OfflineAudioContext(1, 44100 * Math.ceil((lastNote.t + lastNote.d) / composition.tempo), 44100);
+            composition.notes.sort(function(a, b) {
+                return a.t - b.t;
+            });
+            
+            var sources = [];
+            //var oscillator = offlineCtx.createOscillator();
+            //sources.push(oscillator);
+            for (var i = 0; i < composition.notes.length; i++) {
+                var thisSrcIdx = null;
+                for (var j = 0; j < sources.length; j++) {
+                    var prevNote = composition.notes[sources[j].idx];
+                    if (prevNote.t + prevNote.d <= composition.notes[i].t) {
+                        thisSrcIdx = j;
+                    }
+                }
+                if (thisSrcIdx === null) {
+                    var osc = offlineCtx.createOscillator();
+                    var gain = offlineCtx.createGain();
+                    gain.gain.setValueAtTime(0, 0);
+                    osc.connect(gain);
+                    osc.start(0);
+
+                    sources.push({
+                        osc: osc,
+                        gain: gain,
+                        idx: i,
+                    });
+                    thisSrcIdx = sources.length - 1;
+                }
+                sources[thisSrcIdx].idx = i;
+                var startTime = composition.notes[i].t / composition.tempo;
+                var endTime = (composition.notes[i].t + composition.notes[i].d) / composition.tempo;
+                sources[thisSrcIdx].osc.frequency.setValueAtTime(440 * Math.pow(1.0594630943592953, composition.notes[i].note), startTime); // TODO make table of these values
+                sources[thisSrcIdx].gain.gain.setValueAtTime(1, startTime);
+                sources[thisSrcIdx].gain.gain.setValueAtTime(0, endTime);
+            }
+            //var gainNode = offlineCtx.createGain();
+            //oscillator.connect(gainNode);
+            for (var i = 0; i < sources.length; i++) {
+                console.log(i);
+                sources[i].gain.connect(offlineCtx.destination);
+            }
+
+            offlineCtx.startRendering().then(function(renderedBuffer) {
+                var audioCtx = new AudioContext();
+                var song = audioCtx.createBufferSource();
+                song.buffer = renderedBuffer;
+                song.connect(audioCtx.destination);
+                song.onended = function() {
+                    audioCtx.close();
+                }
+                song.start();
+            });
+        }
+
         $(window).trigger('resize');
 
-        //var AudioContext = window.AudioContext || window.webkitAudioContext;
-        //var audioCtx = new AudioContext();
-        //var oscillator = audioCtx.createOscillator();
-        //oscillator.type = 'sine';
-        //oscillator.frequency.value = 440;
-        //var gainNode = audioCtx.createGain();
-        //oscillator.connect(gainNode);
-        //gainNode.connect(audioCtx.destination);
-        //oscillator.start();
-        //oscillator.stop(1);
     });
 
     return { };
