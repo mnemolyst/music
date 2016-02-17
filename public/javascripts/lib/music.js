@@ -1,4 +1,4 @@
-define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
+define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], function($, jQueryUi, paperJs, jasmidStream, midifile) {
     var WindowMouseEvent = window.MouseEvent;
     paperJs.paper.install(this);
     $.ajaxSetup({cache: false});
@@ -51,7 +51,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     // Staff //
     ///////////
     var Staff = function(noteLines, keySig, timeDiv) {
-        this.nln = [0, 2, 3, 5, 7, 8, 10]; // note line notes A-G
+        this.nln = [0, 2, 3, 5, 7, 8, 10, 12]; // note line notes A-G
         this.timeSpacing = 15; // (px / beat)
         this.noteLineSpacing = 15;
         this.keyText = new Group();
@@ -132,22 +132,39 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
     }
     Staff.prototype.noteInfo = function(note) {
-        var i = 0, noteClass = ((note % 12) + 12) % 12, nlnl = this.nln.length;
+        var noteClass = ((note % 12) + 12) % 12;
         var octave = (note - noteClass) / 12;
-        while (i < nlnl && Math.abs(noteClass - this.nln[(i+1)%nlnl] - this.keySig[(i+1)%nlnl]) < Math.abs(noteClass - this.nln[i] - this.keySig[i])) {
-            i++;
+        var best = null;
+        var bestType = 3;
+        var bestDiff = 12;
+        for (var i = 0; i < 8; i++) {
+            var i7 = i % 7;
+            var diff = this.nln[i] + this.keySig[i7] - noteClass;
+            if (diff === 0) {
+                best = i;
+                break;
+            } else if (bestType >= 1 && (diff === -1 || diff === 1) && diff === this.keySig[i7]) {
+                best = i;
+                bestType = 1;
+            } else if (bestType >= 2 && (diff === -1 || diff === 1) && 0 === this.keySig[i7]) {
+                best = i;
+                bestType = 2;
+            } else if (bestType >= 3 && Math.abs(diff) < bestDiff) {
+                best = i;
+                bestDiff = Math.abs(diff);
+            }
         }
-        i = i % nlnl;
+        var best7 = best % 7;
 
         return {
-            noteLine: i + octave * nlnl,
-            sf: noteClass - this.nln[i] - this.keySig[i],
-            y: (this.noteLines[0] - i - octave * nlnl) * this.noteLineSpacing,
+            noteLine: best + octave * 7,
+            sf: noteClass - this.nln[best] - this.keySig[best7],
+            y: (this.noteLines[0] - best - octave * 7) * this.noteLineSpacing,
         }
     }
     Staff.prototype.lineToNote = function(line) {
-        var lineClass = ((line % this.nln.length) + this.nln.length) % this.nln.length;
-        var octave = (line - lineClass) / this.nln.length;
+        var lineClass = ((line % 7) + 7) % 7;
+        var octave = (line - lineClass) / 7;
         return this.nln[lineClass] + this.keySig[lineClass] + octave * 12;
     }
     Staff.prototype.noteToLine = function(note) {
@@ -163,6 +180,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     Staff.prototype.remove = function() {
         this.keyText.remove();
+        this.timeText.remove();
         this.paths.remove();
     }
 
@@ -223,7 +241,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.dbId = dbId || null;
         this.staff = staff;
         this.notes = [];
-        this.tempo = 12;
+        this.tempo = 6;
     }
     Composition.prototype.refresh = function() {
         for (var i = 0; i < this.notes.length; i++) {
@@ -269,7 +287,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         });
         this.hPath = new Path({
             strokeColor: 'red',
-            strokeWidth: 1.5,
+            strokeWidth: 2.5,
             segments: [
                 [0, 0],
                 [10, 0]
@@ -373,8 +391,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         composition.refresh();
                         staff.vRefresh();
                     }
-                    //console.log('t ' + cursor.t);
-                    //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
                     cursor.refresh();
                     break;
                 case 'j':
@@ -404,8 +420,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         composition.refresh();
                         staff.vRefresh();
                     }
-                    //console.log('t ' + cursor.t);
-                    //console.log('tpx ' + (cursor.t - leftTime) * staff.timeSpacing);
                     cursor.refresh();
                     break;
                 case 'n':
@@ -717,7 +731,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             //var gainNode = offlineCtx.createGain();
             //oscillator.connect(gainNode);
             for (var i = 0; i < sources.length; i++) {
-                console.log(i);
                 sources[i].gain.connect(offlineCtx.destination);
             }
 

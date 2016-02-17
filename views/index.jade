@@ -7,7 +7,7 @@ block content
         | var dbCompositions = [
         each composition in compositions
             | {
-            = 'name: \'' + composition.name + '\','
+            = 'name: \'' + composition.name.replace(/'/g, '\\\'') + '\','
             = 'id: \'' + composition._id.toString() + '\''
             | },
         | ]
