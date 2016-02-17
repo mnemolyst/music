@@ -1,7 +1,7 @@
-var Stream = require('./stream');
+var Stream = require('./mystream');
 /*
 class to parse the .mid file format
-(depends on stream.js)
+(depends on mystream.js)
 */
 function MidiFile(data) {
 	function readChunk(stream) {
@@ -35,23 +35,23 @@ function MidiFile(data) {
 						return event;
 					case 0x01:
 						event.subtype = 'text';
-						event.text = stream.read(length);
+						event.text = stream.read(length).toString();
 						return event;
 					case 0x02:
 						event.subtype = 'copyrightNotice';
-						event.text = stream.read(length);
+						event.text = stream.read(length).toString();
 						return event;
 					case 0x03:
 						event.subtype = 'trackName';
-						event.text = stream.read(length);
+						event.text = stream.read(length).toString();
 						return event;
 					case 0x04:
 						event.subtype = 'instrumentName';
-						event.text = stream.read(length);
+						event.text = stream.read(length).toString();
 						return event;
 					case 0x05:
 						event.subtype = 'lyrics';
-						event.text = stream.read(length);
+						event.text = stream.read(length).toString();
 						return event;
 					case 0x06:
 						event.subtype = 'marker';
@@ -205,7 +205,6 @@ function MidiFile(data) {
 	var formatType = headerStream.readInt16();
 	var trackCount = headerStream.readInt16();
 	var timeDivision = headerStream.readInt16();
-    console.log(formatType, trackCount, timeDivision);
 	
 	if (timeDivision & 0x8000) {
 		throw "Expressing time division in SMTPE frames is not supported yet"
