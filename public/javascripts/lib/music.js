@@ -241,7 +241,7 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
         this.dbId = dbId || null;
         this.staff = staff;
         this.notes = [];
-        this.tempo = 6;
+        this.tempo = 3;
     }
     Composition.prototype.refresh = function() {
         for (var i = 0; i < this.notes.length; i++) {
