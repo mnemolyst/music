@@ -1,4 +1,4 @@
-define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], function($, jQueryUi, paperJs, jasmidStream, midifile) {
+define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     var WindowMouseEvent = window.MouseEvent;
     paperJs.paper.install(this);
     $.ajaxSetup({cache: false});
@@ -241,7 +241,7 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
         this.dbId = dbId || null;
         this.staff = staff;
         this.notes = [];
-        this.tempo = 3;
+        this.tempo = 500000; // microseconds per beat
     }
     Composition.prototype.refresh = function() {
         for (var i = 0; i < this.notes.length; i++) {
@@ -323,7 +323,7 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
         var staff = new Staff(
             [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
             keySignatures['am'],
-            12
+            4
         );
 
         var composition = new Composition('Untitled', staff);
@@ -364,6 +364,7 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
                             notes.push(note);
                         }
                         composition.notes = notes;
+                        composition.tempo = data.tempo || 500000; // microseconds per beat
                         composition.refresh();
                     }
                     cursor.refresh();
@@ -691,7 +692,7 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
                 return (b.t + b.d) - (a.t + a.d);
             });
             var lastNote = composition.notes[0];
-            var offlineCtx = new OfflineAudioContext(1, 44100 * Math.ceil((lastNote.t + lastNote.d) / composition.tempo), 44100);
+            var offlineCtx = new OfflineAudioContext(1, 44100 * Math.ceil((lastNote.t + lastNote.d) * composition.tempo * 0.000001), 44100);
             composition.notes.sort(function(a, b) {
                 return a.t - b.t;
             });
@@ -722,8 +723,9 @@ define(['jquery', 'jqueryui', 'paper', 'jasmid/stream', 'jasmid/midifile'], func
                     thisSrcIdx = sources.length - 1;
                 }
                 sources[thisSrcIdx].idx = i;
-                var startTime = composition.notes[i].t / composition.tempo;
-                var endTime = (composition.notes[i].t + composition.notes[i].d) / composition.tempo;
+                var startTime = composition.notes[i].t * composition.tempo * 0.000001;
+                var endTime = (composition.notes[i].t + composition.notes[i].d) * composition.tempo * 0.000001;
+                //console.log(startTime, endTime);
                 sources[thisSrcIdx].osc.frequency.setValueAtTime(440 * Math.pow(1.0594630943592953, composition.notes[i].note), startTime); // TODO make table of these values
                 sources[thisSrcIdx].gain.gain.setValueAtTime(1, startTime);
                 sources[thisSrcIdx].gain.gain.setValueAtTime(0, endTime);
