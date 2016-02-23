@@ -1,6 +1,12 @@
 var Png = require('png').Png;
 var fs = require('fs');
 
+function dist(a, b) {
+    var nd = a.n - b.n;
+    var td = a.t - b.t;
+    return nd * nd + td * td;
+}
+
 function cluster(x, med) { // med is array of indices into x
     var c = []; // clusters
     for (var j = 0; j < med.length; j++) {
@@ -9,10 +15,7 @@ function cluster(x, med) { // med is array of indices into x
     for (var i = 0; i < x.length; i++) {
         var minD = null, minJ = 0;
         for (var j = 0; j < med.length; j++) {
-            var nd = x[i].n - x[med[j]].n; // note dist
-            var td = x[i].t - x[med[j]].t; // time dist
-            //var td = (x[i].t + x[i].d * 0.5) - (x[med[j]].t + x[med[j]].d * 0.5); // avg time dist
-            var d = nd * nd + td * td;
+            var d = dist(x[i], x[med[j]]);
             if (minD === null || d < minD) {
                 minD = d;
                 minJ = j; // index into med
@@ -31,9 +34,7 @@ function findMed(x, c) { // c in array of arrays of indices into x
             var sumD = 0;
             for (var k = 0; k < c[i].length; k++) { // sum the distances to all other points
                 if (j !== k) {
-                    var nd = x[c[i][j]].n - x[c[i][k]].n;
-                    var td = x[c[i][j]].t - x[c[i][k]].t;
-                    sumD += nd * nd + td * td;
+                    sumD += dist(x[c[i][j]], x[c[i][k]]);
                 }
             }
             if (minD === null || sumD < minD) {
@@ -61,7 +62,11 @@ function diffMed(med1, med2) {
 function kMed(x, k) {
     var med = [], newMed, c;
     for (var i = 0; i < k; i++) {
-        med.push(Math.floor(Math.random() * x.length));
+        var ri = Math.floor(Math.random() * x.length);
+        while (med.indexOf(ri) !== -1) {
+            ri = Math.floor(Math.random() * x.length);
+        }
+        med.push(ri);
     }
 
     var keepGoing = true;
@@ -78,19 +83,52 @@ function kMed(x, k) {
     return c;
 }
 
+function minSilhouette(x, c) {
+    var min = 1;
+    for (var i = 0; i < x.length; i++) {
+        var thisAvg, minOtherAvg = null;
+        for (var j = 0; j < c.length; j++) {
+            var sumD = 0;
+            var isInThis = false;
+            for (var k = 0; k < c[j].length; k++) {
+                if (i === c[j][k]) {
+                    isInThis = true;
+                } else {
+                    sumD += dist(x[i], x[c[j][k]]);
+                }
+            }
+            var avgD = sumD / k;
+            if (isInThis) {
+                thisAvg = avgD;
+            } else if (minOtherAvg === null || avgD < minOtherAvg) {
+                minOtherAvg = avgD;
+            }
+        }
+        var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
+        if (s < min) {
+            min = s;
+        }
+    }
+    return min;
+}
+
 var x = [];
 
 for (var i = 0; i < 100; i++) {
     var r = Math.random();
     var k = r > 0.75 ? 3 : r > 0.5 ? 2 : r > 0.25 ? 1 : 0;
     x.push({
-        n: Math.random() + (k == 0 || k == 1 ? 2 : 0),
-        t: Math.random() + (k == 1 || k == 2 ? 2 : 0),
+        n: Math.random() + (k == 0 || k == 1 ? 1 : 0),
+        t: Math.random() + (k == 1 || k == 2 ? 1 : 0),
     });
 }
 
 var k = 4;
 var c = kMed(x, k);
+while (minSilhouette(x, c) < 0) {
+    console.log(minSilhouette(x, c));
+    c = kMed(x, k);
+}
 
 var imageBuf = new Buffer(100 * 100);
 imageBuf.fill(0);
