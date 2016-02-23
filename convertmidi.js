@@ -234,9 +234,12 @@ fs.readFile(fileIn, function(err, data) {
         var beforeMul = 0, afterMul = 0, iter = 0, bestC;
         var beforeV = 1, afterV = 1, lastS;
         do {
-            // TODO sync bestC and testNotes better
-            // TODO record best pass
-            bestC = c;
+            bestC = c.map(function(el) {
+                return el.map(function(el) {
+                    return testNotes[el].oi;
+                });
+            });
+
             var testNotes = [];
             for (var i = 0; i < track.notes.length; i++) {
                 if ((trainNote.t - tpb * beforeMul <= track.notes[i].t) && (track.notes[i].t <= trainNote.t + tpb * afterMul)) {
@@ -273,12 +276,6 @@ fs.readFile(fileIn, function(err, data) {
         //} while (beforeMul + afterMul < 8 || (s >= silhouetteLimit && beforeMul + afterMul < 24));
         } while ((beforeV || afterV) && beforeMul + afterMul < 24);
         console.log(s);
-
-        var bestC = bestC.map(function(el) {
-            return el.map(function(el) {
-                return testNotes[el].oi;
-            });
-        });
 
         var imageBuf = new Buffer(rows * cols * 3);
         imageBuf.fill(0);
