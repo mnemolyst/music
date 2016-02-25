@@ -85,7 +85,6 @@ fs.readFile(fileIn, function(err, data) {
     }
 
     function cluster(x, med) { // med is array of indices into x
-        console.log('cluster', 'x', x, 'med', med);
         var c = []; // clusters
         for (var j = 0; j < med.length; j++) {
             c[j] = [];
@@ -107,7 +106,6 @@ fs.readFile(fileIn, function(err, data) {
     }
 
     function findMed(c) {
-        console.log('findmed', 'c', c);
         var med = [];
         for (var i = 0; i < c.length; i++) { // for each cluster...
             var minD = null, minJ = 0;
@@ -149,40 +147,40 @@ fs.readFile(fileIn, function(err, data) {
 
         do {
             c = cluster(x, med);
-            console.log('c', c);
             oldMed = med;
             med = findMed(c);
-            console.log('med', med);
         } while (diffMed(oldMed, med));
 
         return c;
     }
 
-    function minSilhouette(x, c) {
+    function minSilhouette(c) {
         var min = 1;
-        for (var i = 0; i < x.length; i++) {
-            var thisAvg, minOtherAvg = null;
-            for (var j = 0; j < c.length; j++) {
-                var sumD = 0;
-                var isInThis = false;
-                for (var k = 0; k < c[j].length; k++) {
-                    if (i === c[j][k]) {
-                        isInThis = true;
-                        // dist() is zero
-                    } else {
-                        sumD += dist(i, c[j][k]);
+        for (var i = 0; i < c.length; i++) {
+            for (var j = 0; j < c[i].length; j++) {
+                var thisSum = 0;
+                for (var k = 0; k < c[i].length; k++) {
+                    if (j !== k) {
+                        thisSum += dist(c[i][j], c[i][k]);
                     }
                 }
-                var avgD = sumD / k;
-                if (isInThis) {
-                    thisAvg = avgD;
-                } else if (minOtherAvg === null || avgD < minOtherAvg) {
-                    minOtherAvg = avgD;
+                var thisAvg = thisSum / k, minOtherAvg = null;
+                for (var l = 0; l < c.length; l++) {
+                    if (i !== l) {
+                        var oSum = 0;
+                        for (var m = 0; m < c[l].length; m++) {
+                            oSum += dist(c[i][j], c[l][m]);
+                        }
+                        var oAvg = oSum / m;
+                        if (minOtherAvg === null || oAvg < minOtherAvg) {
+                            minOtherAvg = oAvg;
+                        }
+                    }
                 }
-            }
-            var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
-            if (s < min) {
-                min = s;
+                var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
+                if (s < min) {
+                    min = s;
+                }
             }
         }
         return min;
@@ -214,8 +212,9 @@ fs.readFile(fileIn, function(err, data) {
     var cols = Math.ceil(track.lastNoteEnd * hScale);
     var tpb = midifile.header.ticksPerBeat;
     var oneMeasure = tpb * tsNum / tsDen; // one measure's worth of ticks
-    var silhouetteLimit1 = 0.5;
-    var silhouetteLimit2 = 0.5;
+    var silhouetteLimit1 = 0.8;
+    var silhouetteLimit2 = 0.4;
+    var silhouetteLimit3 = 0;
 
     var colors = [
         [0xff, 0xff, 0],
@@ -243,8 +242,7 @@ fs.readFile(fileIn, function(err, data) {
             var tries = 1, c, s;
             do {
                 c = kMed(testNotes, maxK);
-                console.log(c);
-            } while ((s = minSilhouette(testNotes, c)) < silhouetteLimit1 && tries++ < 10);
+            } while ((s = minSilhouette(c)) < silhouetteLimit1 && tries++ < 10);
         //} while (s >= silhouetteLimit1 && maxK++ <= 4);
 
         if (s < silhouetteLimit1) {
@@ -253,30 +251,40 @@ fs.readFile(fileIn, function(err, data) {
             //var trainType = Math.floor(Math.random() * 4); // 0: all notes before, 1: single melody before, 2: single melody before, some after, 3: all notes before and after except some same-melody
             var trainType = 1;
         }
-        console.log(trainType);
 
         if (trainType !== 0) {
-            var c2, cSeeds = [];
+            var c2, cSeeds = [], stepSize = 5;
             do {
                 testNotes = [], tries = 1;
                 var firstC = Math.min(c[0][0], c[1][0]);
                 var secondC = Math.max(c[0][0], c[1][0]);
                 cSeeds = cSeeds.concat(firstC, secondC);
-                for (var i = Math.max(0, firstC - 5 * maxK); i < secondC; i++) {
+                notes: for (var i = Math.max(0, firstC - stepSize * maxK); i < secondC; i++) {
+                    for (var j = 0; j < c.length; j++) {
+                        if (c[j].indexOf(i) !== -1) {
+                            continue notes;
+                        }
+                    }
                     testNotes.push(i);
                 }
                 c2 = cluster(testNotes, [c[0][0], c[1][0]]);
-                s = minSilhouette(testNotes, c2);
+                //if (c2[0].length === 0 || c2[1].length === 0) {
+                //    console.log('break');
+                //    break;
+                //}
+                s = minSilhouette(c2);
                 if (s >= silhouetteLimit2) {
+                    stepSize++;
                     for (var i = 0; i < c2.length; i++) {
-                        for (var j = c2[i].length - 1; j > 0; j--) {
+                        for (var j = c2[i].length - 1; j >= 0; j--) {
                             if (c[i].indexOf(c2[i][j]) === -1) {
                                 c[i].unshift(c2[i][j]);
                             }
                         }
                     }
                 }
-            } while (s >= silhouetteLimit2 && firstC > 5 * maxK);
+                console.log(s, stepSize);
+            } while ((s >= silhouetteLimit2 || --stepSize > 1) && firstC >= 0);
         }
 
         // build training set
@@ -311,8 +319,8 @@ fs.readFile(fileIn, function(err, data) {
 
                     if (i === tni) {
                         imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[0][k];
-                    //} else if (cSeeds.indexOf(i) !== -1) {
-                    //    imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[3][k];
+                    } else if (cSeeds && cSeeds.indexOf(i) !== -1) {
+                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[3][k];
                     } else {
                         for (var l = 0; l < c.length; l++) {
                             if (c[l].indexOf(i) !== -1) {
