@@ -5,124 +5,11 @@ var MidiFile = require('./public/javascripts/lib/jasmid/midifile');
 var fileIn = process.argv[2];
 var fileRE = /(.*)\.mid$/;
 
-function dist(a, b) {
-    var nd = a.n - b.n;
-    var td = a.t - b.t;
-    return Math.abs(10000 * nd * nd * nd) + td * td;
-}
-
-function cluster(x, med) { // med is array of indices into x
-    var c = []; // clusters
-    for (var j = 0; j < med.length; j++) {
-        c[j] = [];
-    }
-    for (var i = 0; i < x.length; i++) {
-        var minD = null, minJ = 0;
-        for (var j = 0; j < med.length; j++) {
-            var d = dist(x[i], x[med[j]]);
-            if (minD === null || d < minD) {
-                minD = d;
-                minJ = j; // index into med
-            }
-        }
-        c[minJ].push(i) // put index into x in cluster minJ
-    }
-    return c;
-}
-
-function findMed(x, c) { // c in array of arrays of indices into x
-    var med = [];
-    for (var i = 0; i < c.length; i++) { // for each cluster...
-        var minD = null, minJ = 0;
-        for (var j = 0; j < c[i].length; j++) { // for each potential medioid...
-            var sumD = 0;
-            for (var k = 0; k < c[i].length; k++) { // sum the distances to all other points
-                if (j !== k) {
-                    sumD += dist(x[c[i][j]], x[c[i][k]]);
-                }
-            }
-            if (minD === null || sumD < minD) {
-                minD = sumD;
-                minJ = j; // c[i][j] is the best medioid so far for cluster i
-            }
-        }
-        med[i] = c[i][minJ];
-    }
-    return med;
-}
-
-function diffMed(med1, med2) {
-    if (med1.length !== med2.length) {
-        return true;
-    }
-    for (var i = 0; i < med1.length; i++) {
-        if (med1[i] !== med2[i]) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function kMed(x, k) {
-    var med = [], newMed, c;
-    for (var i = 0; i < k; i++) {
-        do {
-            var ri = Math.floor(Math.random() * x.length);
-        } while (med.indexOf(ri) !== -1);
-        med.push(ri);
-        if (med.length === x.length) { // more categories than elements
-            return med.map(function(el) { return [el] });
-        }
-    }
-
-    var keepGoing = true;
-    while (keepGoing) {
-        c = cluster(x, med);
-        newMed = findMed(x, c);
-        if (diffMed(med, newMed)) {
-            med = newMed;
-        } else {
-            keepGoing = false;
-        }
-    }
-
-    return c;
-}
-
-function minSilhouette(x, c) {
-    var min = 1;
-    for (var i = 0; i < x.length; i++) {
-        var thisAvg, minOtherAvg = null;
-        for (var j = 0; j < c.length; j++) {
-            var sumD = 0;
-            var isInThis = false;
-            for (var k = 0; k < c[j].length; k++) {
-                if (i === c[j][k]) {
-                    isInThis = true;
-                } else {
-                    sumD += dist(x[i], x[c[j][k]]);
-                }
-            }
-            var avgD = sumD / k;
-            if (isInThis) {
-                thisAvg = avgD;
-            } else if (minOtherAvg === null || avgD < minOtherAvg) {
-                minOtherAvg = avgD;
-            }
-        }
-        var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
-        if (s < min) {
-            min = s;
-        }
-    }
-    return min;
-}
-
 fs.readFile(fileIn, function(err, data) {
     var timeDiv = 4;
     var tsNum = null;
     var tsDen = null;
-    var tempo = 500000;
+    var tempo = 0.5;
     var tracks = [];
     var midifile = MidiFile(data);
 
@@ -170,15 +57,136 @@ fs.readFile(fileIn, function(err, data) {
                     tsDen = Math.pow(2, event.denominator - 2);
                     break;
                 case 'setTempo':
-                    tempo = event.microsecondsPerBeat;
+                    tempo = event.microsecondsPerBeat * 0.000001;
                     break;
             }
         }
         tracks[i].notes = notes;
     }
 
-    var secondsPerTick = 0.000001 * tempo / midifile.header.ticksPerBeat
+    var secondsPerTick = tempo / midifile.header.ticksPerBeat
     var track = tracks[1];
+
+    function dist(a, b) {
+        var nd = track.notes[a].n - track.notes[b].n;
+        var td = track.notes[a].t - track.notes[b].t;
+        return Math.abs(10000 * nd * nd * nd) + td * td;
+    }
+
+    function shuffleArray(array) {
+        array = array.slice();
+        for (var i = array.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var temp = array[i];
+            array[i] = array[j];
+            array[j] = temp;
+        }
+        return array;
+    }
+
+    function cluster(x, med) { // med is array of indices into x
+        console.log('cluster', 'x', x, 'med', med);
+        var c = []; // clusters
+        for (var j = 0; j < med.length; j++) {
+            c[j] = [];
+        }
+        for (var i = 0; i < x.length; i++) {
+            var minD = null, minJ = 0;
+            for (var j = 0; j < med.length; j++) {
+                var d = dist(x[i], med[j]);
+                if (minD === null || d < minD) {
+                    minD = d;
+                    minJ = j; // index into med
+                }
+            }
+            if (minD !== null) {
+                c[minJ].push(x[i]) // put index into x in cluster minJ
+            }
+        }
+        return c;
+    }
+
+    function findMed(c) {
+        console.log('findmed', 'c', c);
+        var med = [];
+        for (var i = 0; i < c.length; i++) { // for each cluster...
+            var minD = null, minJ = 0;
+            for (var j = 0; j < c[i].length; j++) { // for each potential medioid...
+                var sumD = 0;
+                for (var k = 0; k < c[i].length; k++) { // sum the distances to all other points
+                    if (j !== k) {
+                        sumD += dist(c[i][j], c[i][k]);
+                    }
+                }
+                if (minD === null || sumD < minD) {
+                    minD = sumD;
+                    minJ = j; // c[i][j] is the best medioid so far for cluster i
+                }
+            }
+            if (minD !== null) {
+                med[i] = c[i][minJ];
+            }
+        }
+        return med;
+    }
+
+    function diffMed(med1, med2) {
+        if (med1.length !== med2.length) {
+            return true;
+        }
+        for (var i = 0; i < med1.length; i++) {
+            if (med1[i] !== med2[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function kMed(x, k) {
+        var med = shuffleArray(x).slice(0, k);
+
+        var c, oldMed;
+
+        do {
+            c = cluster(x, med);
+            console.log('c', c);
+            oldMed = med;
+            med = findMed(c);
+            console.log('med', med);
+        } while (diffMed(oldMed, med));
+
+        return c;
+    }
+
+    function minSilhouette(x, c) {
+        var min = 1;
+        for (var i = 0; i < x.length; i++) {
+            var thisAvg, minOtherAvg = null;
+            for (var j = 0; j < c.length; j++) {
+                var sumD = 0;
+                var isInThis = false;
+                for (var k = 0; k < c[j].length; k++) {
+                    if (i === c[j][k]) {
+                        isInThis = true;
+                        // dist() is zero
+                    } else {
+                        sumD += dist(i, c[j][k]);
+                    }
+                }
+                var avgD = sumD / k;
+                if (isInThis) {
+                    thisAvg = avgD;
+                } else if (minOtherAvg === null || avgD < minOtherAvg) {
+                    minOtherAvg = avgD;
+                }
+            }
+            var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
+            if (s < min) {
+                min = s;
+            }
+        }
+        return min;
+    }
 
     var dbIn = {
         name: track.name,
@@ -192,10 +200,10 @@ fs.readFile(fileIn, function(err, data) {
         tempo: tempo,
     };
 
-    //console.log(midifile.header);
-    //console.log(midifile.tracks);
-    //console.log(tracks[1].nbp);
-    //console.log(dbIn);
+    //c onsole.log(midifile.header);
+    //c onsole.log(midifile.tracks);
+    //c onsole.log(tracks[1].nbp);
+    //c onsole.log(dbIn);
 
     //fs.writeFileSync('testdb', JSON.stringify(dbIn));
 
@@ -206,76 +214,91 @@ fs.readFile(fileIn, function(err, data) {
     var cols = Math.ceil(track.lastNoteEnd * hScale);
     var tpb = midifile.header.ticksPerBeat;
     var oneMeasure = tpb * tsNum / tsDen; // one measure's worth of ticks
-    var silhouetteLimit = 0.4;
+    var silhouetteLimit1 = 0.5;
+    var silhouetteLimit2 = 0.5;
+
+    var colors = [
+        [0xff, 0xff, 0],
+        [0xff, 0, 0],
+        [0, 0, 0xff],
+        [0, 0xff, 0],
+        [0xff, 0, 0xff],
+    ];
 
     //for (var n = 0; n < 10; n++) {
         var tni = Math.floor(Math.random() * track.notes.length);
         var trainNote = track.notes[tni];
-        var trainRange = [];
-        var leadIn = Math.random() * (trainNote.t - tpb) + tpb;
 
-        // see how many melodic lines we can find within one beat of trainNote
-        var testNotes = [];
-        for (var i = 0; i < track.notes.length; i++) {
-            if ((trainNote.t - tpb <= track.notes[i].t) && (track.notes[i].t <= trainNote.t + tpb)) {
-                testNotes.push({oi: i, n: track.notes[i].n, t: track.notes[i].t});
-            }
+        // TODO see how many melodic lines we can find within one beat of trainNote
+        var testNotes = [], maxK = 2;
+        //for (var i = 0; i < track.notes.length; i++) {
+        //    if ((beforeT <= track.notes[i].t) && (track.notes[i].t < afterT)) {
+        //        testNotes.push(i);
+        //    }
+        //}
+        for (var i = Math.max(0, tni - 3 * maxK); i < Math.min(track.notes.length, tni + 3 * maxK); i++) {
+            testNotes.push(i);
         }
-        var maxK = 2;
-        //do {
-            var tries = 1, s;
+        //do { TODO find best K / best s
+            var tries = 1, c, s;
             do {
-                var c = kMed(testNotes, maxK);
-            } while ((s = minSilhouette(testNotes, c)) < silhouetteLimit && tries++ < 20);
-        //} while (s >= silhouetteLimit && maxK++ <= 4);
-        console.log(s);
+                c = kMed(testNotes, maxK);
+                console.log(c);
+            } while ((s = minSilhouette(testNotes, c)) < silhouetteLimit1 && tries++ < 10);
+        //} while (s >= silhouetteLimit1 && maxK++ <= 4);
 
-        // now see how far we can extend the melodic lines
-        var beforeMul = 0, afterMul = 0, iter = 0, bestC;
-        var beforeV = 1, afterV = 1, lastS;
-        do {
-            bestC = c.map(function(el) {
-                return el.map(function(el) {
-                    return testNotes[el].oi;
-                });
-            });
+        if (s < silhouetteLimit1) {
+            var trainType = 0;
+        } else {
+            //var trainType = Math.floor(Math.random() * 4); // 0: all notes before, 1: single melody before, 2: single melody before, some after, 3: all notes before and after except some same-melody
+            var trainType = 1;
+        }
+        console.log(trainType);
 
-            var testNotes = [];
-            for (var i = 0; i < track.notes.length; i++) {
-                if ((trainNote.t - tpb * beforeMul <= track.notes[i].t) && (track.notes[i].t <= trainNote.t + tpb * afterMul)) {
-                    testNotes.push({oi: i, n: track.notes[i].n, t: track.notes[i].t});
-                }
-            }
-
-            // try to separate testNotes into maxK categories
-            var tries = 1;
+        if (trainType !== 0) {
+            var c2, cSeeds = [];
             do {
-                var c = kMed(testNotes, maxK);
-            } while ((s = minSilhouette(testNotes, c)) < silhouetteLimit && tries++ < 10);
-
-        console.log('maybe reverse', beforeMul, afterMul, s);
-            // stop expanding if we go too far for good results
-            if (s < silhouetteLimit) {
-                if (iter % 2) {
-                    beforeV = 0;
-                    beforeMul--;
-                } else {
-                    afterV = 0;
-                    afterMul--;
+                testNotes = [], tries = 1;
+                var firstC = Math.min(c[0][0], c[1][0]);
+                var secondC = Math.max(c[0][0], c[1][0]);
+                cSeeds = cSeeds.concat(firstC, secondC);
+                for (var i = Math.max(0, firstC - 5 * maxK); i < secondC; i++) {
+                    testNotes.push(i);
                 }
-            }
-        console.log('after reverse', beforeMul, afterMul);
+                c2 = cluster(testNotes, [c[0][0], c[1][0]]);
+                s = minSilhouette(testNotes, c2);
+                if (s >= silhouetteLimit2) {
+                    for (var i = 0; i < c2.length; i++) {
+                        for (var j = c2[i].length - 1; j > 0; j--) {
+                            if (c[i].indexOf(c2[i][j]) === -1) {
+                                c[i].unshift(c2[i][j]);
+                            }
+                        }
+                    }
+                }
+            } while (s >= silhouetteLimit2 && firstC > 5 * maxK);
+        }
 
-            // expand the window
-            if (++iter % 2) {
-                beforeMul += beforeV;
-            } else {
-                afterMul += afterV;
-            }
-        console.log('after expand', beforeMul, afterMul);
-        //} while (beforeMul + afterMul < 8 || (s >= silhouetteLimit && beforeMul + afterMul < 24));
-        } while ((beforeV || afterV) && beforeMul + afterMul < 24);
-        console.log(s);
+        // build training set
+        //var trainMelody = null;
+        //for (var i = 0; i < c.length; i++) {
+        //    if (c[i].indexOf(tni) !== -1) {
+        //        trainMelody = i;
+        //        break;
+        //    }
+        //}
+        //var trainStart = Math.random() * (trainNote.t - oneMeasure);
+        //var trainStop = trainNote.t + oneMeasure + (Math.random() * (lastNoteEnd - trainNote.t - oneMeasure));
+        //var trainGap = trainNote.t + Math.random() * 2 * oneMeasure;
+        //var trainNotes = [];
+        //for (var i = 0; i < track.notes.length; i++) {
+        //    var note = track.notes[i];
+        //    if (note.t < trainStart || trainStop < note.t) {
+        //        continue;
+        //    }
+        //    if ((trainType == 0 || trainType == 2) && 
+        //    trainNotes.push(note);
+        //}
 
         var imageBuf = new Buffer(rows * cols * 3);
         imageBuf.fill(0);
@@ -286,14 +309,16 @@ fs.readFile(fileIn, function(err, data) {
                 for (var k = 0; k < 3; k++) {
                     imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = Math.floor(note.v * (255 / 127));
 
-                    if (k === 0 && bestC[0].indexOf(i) !== -1 && i !== tni) {
-                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = 0;
-                    }
-                    if (k === 1 && bestC[1].indexOf(i) !== -1 && i !== tni) {
-                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = 0;
-                    }
-                    if (k === 2 && i === tni) {
-                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = 0;
+                    if (i === tni) {
+                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[0][k];
+                    //} else if (cSeeds.indexOf(i) !== -1) {
+                    //    imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[3][k];
+                    } else {
+                        for (var l = 0; l < c.length; l++) {
+                            if (c[l].indexOf(i) !== -1) {
+                                imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[l+1][k];
+                            }
+                        }
                     }
                 }
             }

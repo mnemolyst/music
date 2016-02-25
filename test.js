@@ -1,10 +1,18 @@
-var Png = require('png').Png;
-var fs = require('fs');
+function dist(a, b, notes) {
+    var nd = notes[a].n - notes[b].n;
+    var td = notes[a].t - notes[b].t;
+    return Math.abs(10000 * nd * nd * nd) + td * td;
+}
 
-function dist(a, b) {
-    var nd = a.n - b.n;
-    var td = a.t - b.t;
-    return nd * nd + td * td;
+function shuffleArray(array) {
+    array = array.slice();
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+    return array;
 }
 
 function cluster(x, med) { // med is array of indices into x
@@ -15,7 +23,7 @@ function cluster(x, med) { // med is array of indices into x
     for (var i = 0; i < x.length; i++) {
         var minD = null, minJ = 0;
         for (var j = 0; j < med.length; j++) {
-            var d = dist(x[i], x[med[j]]);
+            var d = dist(i, med[j], x);
             if (minD === null || d < minD) {
                 minD = d;
                 minJ = j; // index into med
@@ -34,7 +42,7 @@ function findMed(x, c) { // c in array of arrays of indices into x
             var sumD = 0;
             for (var k = 0; k < c[i].length; k++) { // sum the distances to all other points
                 if (j !== k) {
-                    sumD += dist(x[c[i][j]], x[c[i][k]]);
+                    sumD += dist(c[i][j], c[i][k], x);
                 }
             }
             if (minD === null || sumD < minD) {
@@ -59,85 +67,53 @@ function diffMed(med1, med2) {
     return false;
 }
 
-function kMed(x, k) {
-    var med = [], newMed, c;
-    for (var i = 0; i < k; i++) {
-        var ri = Math.floor(Math.random() * x.length);
-        while (med.indexOf(ri) !== -1) {
-            ri = Math.floor(Math.random() * x.length);
+function kMed(x, k, cSeeds) {
+    if (cSeeds) {
+        var med = cSeeds;
+    } else {
+        var xi = []
+        for (var i = 0; i < x.length; i++) {
+            xi.push(i);
         }
-        med.push(ri);
+        var med = shuffleArray(xi).slice(0, k);
     }
+    var c, oldMed;
 
-    var keepGoing = true;
-    while (keepGoing) {
+    do {
         c = cluster(x, med);
-        newMed = findMed(x, c);
-        if (diffMed(med, newMed)) {
-            med = newMed;
-        } else {
-            keepGoing = false;
+        oldMed = med;
+        med = findMed(x, c);
+        if (cSeeds) {
+            for (var i = 0; i < c.length; i++) {
+                if (c[i].indexOf(cSeeds[i]) === -1) {
+                    med = cSeeds; // reset
+                    continue;
+                }
+            }
         }
-    }
+    } while (diffMed(oldMed, med));
 
     return c;
 }
 
-function minSilhouette(x, c) {
-    var min = 1;
-    for (var i = 0; i < x.length; i++) {
-        var thisAvg, minOtherAvg = null;
-        for (var j = 0; j < c.length; j++) {
-            var sumD = 0;
-            var isInThis = false;
-            for (var k = 0; k < c[j].length; k++) {
-                if (i === c[j][k]) {
-                    isInThis = true;
-                } else {
-                    sumD += dist(x[i], x[c[j][k]]);
-                }
-            }
-            var avgD = sumD / k;
-            if (isInThis) {
-                thisAvg = avgD;
-            } else if (minOtherAvg === null || avgD < minOtherAvg) {
-                minOtherAvg = avgD;
-            }
-        }
-        var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
-        if (s < min) {
-            min = s;
-        }
-    }
-    return min;
-}
+var a = [
+{n:1, t:1},
+{n:2, t:1},
+{n:1, t:2},
+{n:2, t:2},
+{n:11, t:1},
+{n:12, t:1},
+{n:11, t:2},
+{n:12, t:2},
+{n:1, t:11},
+{n:2, t:11},
+{n:1, t:12},
+{n:2, t:12},
+{n:11, t:11},
+{n:12, t:11},
+{n:11, t:12},
+{n:12, t:12},
+];
 
-var x = [];
-
-for (var i = 0; i < 100; i++) {
-    var r = Math.random();
-    var k = r > 0.75 ? 3 : r > 0.5 ? 2 : r > 0.25 ? 1 : 0;
-    x.push({
-        n: Math.random() + (k == 0 || k == 1 ? 1 : 0),
-        t: Math.random() + (k == 1 || k == 2 ? 1 : 0),
-    });
-}
-
-var k = 4;
-var c = kMed(x, k);
-while (minSilhouette(x, c) < 0) {
-    console.log(minSilhouette(x, c));
-    c = kMed(x, k);
-}
-
-var imageBuf = new Buffer(100 * 100);
-imageBuf.fill(0);
-for (var i = 0; i < c.length; i++) {
-    for (var j = 0; j < c[i].length; j++) {
-        imageBuf[100 * Math.floor(x[c[i][j]].t * 100 / 3) + Math.floor(x[c[i][j]].n * 100 / 3)] = Math.floor(0xff * (i + 1) / k);
-    }
-}
-var png = new Png(imageBuf, 100, 100, 'gray', 8);
-png.encode(function(image) {
-    fs.writeFileSync('test.png', image);
-});
+var c = kMed(a, 4, [0, 4, 12, 8]);
+console.log(c);
