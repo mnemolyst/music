@@ -69,7 +69,7 @@ fs.readFile(fileIn, function(err, data) {
 
     function dist(a, b) {
         var nd = track.notes[a].n - track.notes[b].n;
-        var td = track.notes[a].t - track.notes[b].t;
+        var td = (track.notes[a].t + track.notes[a].d) * 0.5 - (track.notes[b].t + track.notes[b].d) * 0.5;
         return Math.abs(10000 * nd * nd * nd) + td * td;
     }
 
@@ -205,16 +205,10 @@ fs.readFile(fileIn, function(err, data) {
 
     //fs.writeFileSync('testdb', JSON.stringify(dbIn));
 
-    var hScale = secondsPerTick * 20;
-    var vScale = 3;
-    var bpp = 3; // bytes per pixel
-    var rows = 128 * vScale; // vScale sub-semitones per MIDI note
-    var cols = Math.ceil(track.lastNoteEnd * hScale);
     var tpb = midifile.header.ticksPerBeat;
     var oneMeasure = tpb * tsNum / tsDen; // one measure's worth of ticks
     var silhouetteLimit1 = 0.8;
     var silhouetteLimit2 = 0.4;
-    var silhouetteLimit3 = 0;
 
     var colors = [
         [0xff, 0xff, 0],
@@ -226,15 +220,10 @@ fs.readFile(fileIn, function(err, data) {
 
     //for (var n = 0; n < 10; n++) {
         var tni = Math.floor(Math.random() * track.notes.length);
+        console.log('tni', tni);
         var trainNote = track.notes[tni];
 
-        // TODO see how many melodic lines we can find within one beat of trainNote
         var testNotes = [], maxK = 2;
-        //for (var i = 0; i < track.notes.length; i++) {
-        //    if ((beforeT <= track.notes[i].t) && (track.notes[i].t < afterT)) {
-        //        testNotes.push(i);
-        //    }
-        //}
         for (var i = Math.max(0, tni - 3 * maxK); i < Math.min(track.notes.length, tni + 3 * maxK); i++) {
             testNotes.push(i);
         }
@@ -248,17 +237,19 @@ fs.readFile(fileIn, function(err, data) {
         if (s < silhouetteLimit1) {
             var trainType = 0;
         } else {
-            //var trainType = Math.floor(Math.random() * 4); // 0: all notes before, 1: single melody before, 2: single melody before, some after, 3: all notes before and after except some same-melody
-            var trainType = 1;
+            var trainType = Math.floor(Math.random() * 4); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
         }
+        console.log('trainType', trainType);
 
-        if (trainType !== 0) {
-            var c2, cSeeds = [], stepSize = 5;
+        if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
+            c = [ [] ];
+            for (var i = 0; i < track.notes.length; c[0].push(i++));
+        } else {
+            var c2, stepSize = 5;
             do {
                 testNotes = [], tries = 1;
                 var firstC = Math.min(c[0][0], c[1][0]);
                 var secondC = Math.max(c[0][0], c[1][0]);
-                cSeeds = cSeeds.concat(firstC, secondC);
                 notes: for (var i = Math.max(0, firstC - stepSize * maxK); i < secondC; i++) {
                     for (var j = 0; j < c.length; j++) {
                         if (c[j].indexOf(i) !== -1) {
@@ -267,11 +258,10 @@ fs.readFile(fileIn, function(err, data) {
                     }
                     testNotes.push(i);
                 }
+                if (testNotes.length === 0) {
+                    break;
+                }
                 c2 = cluster(testNotes, [c[0][0], c[1][0]]);
-                //if (c2[0].length === 0 || c2[1].length === 0) {
-                //    console.log('break');
-                //    break;
-                //}
                 s = minSilhouette(c2);
                 if (s >= silhouetteLimit2) {
                     stepSize++;
@@ -283,35 +273,82 @@ fs.readFile(fileIn, function(err, data) {
                         }
                     }
                 }
-                console.log(s, stepSize);
             } while ((s >= silhouetteLimit2 || --stepSize > 1) && firstC >= 0);
+            stepSize = 5;
+            do {
+                testNotes = [], tries = 1;
+                var lastC = Math.max(c[0][c[0].length-1], c[1][c[1].length-1]);
+                var secondC = Math.min(c[0][c[0].length-1], c[1][c[1].length-1]);
+                notes: for (var i = secondC; i < Math.min(lastC + stepSize * maxK, track.notes.length); i++) {
+                    for (var j = 0; j < c.length; j++) {
+                        if (c[j].indexOf(i) !== -1) {
+                            continue notes;
+                        }
+                    }
+                    testNotes.push(i);
+                }
+                if (testNotes.length === 0) {
+                    break;
+                }
+                c2 = cluster(testNotes, [c[0][c[0].length-1], c[1][c[1].length-1]]);
+                s = minSilhouette(c2);
+                if (s >= silhouetteLimit2) {
+                    stepSize++;
+                    for (var i = 0; i < c2.length; i++) {
+                        for (var j = c2[i].length - 1; j >= 0; j--) {
+                            if (c[i].indexOf(c2[i][j]) === -1) {
+                                c[i].push(c2[i][j]);
+                            }
+                        }
+                    }
+                }
+            } while ((s >= silhouetteLimit2 || --stepSize > 1) && lastC < track.notes.length);
         }
 
         // build training set
-        //var trainMelody = null;
-        //for (var i = 0; i < c.length; i++) {
-        //    if (c[i].indexOf(tni) !== -1) {
-        //        trainMelody = i;
-        //        break;
-        //    }
-        //}
-        //var trainStart = Math.random() * (trainNote.t - oneMeasure);
-        //var trainStop = trainNote.t + oneMeasure + (Math.random() * (lastNoteEnd - trainNote.t - oneMeasure));
-        //var trainGap = trainNote.t + Math.random() * 2 * oneMeasure;
-        //var trainNotes = [];
-        //for (var i = 0; i < track.notes.length; i++) {
-        //    var note = track.notes[i];
-        //    if (note.t < trainStart || trainStop < note.t) {
-        //        continue;
-        //    }
-        //    if ((trainType == 0 || trainType == 2) && 
-        //    trainNotes.push(note);
-        //}
+        var trainNotes = [];
+        var trainStart = Math.random() * (trainNote.t - oneMeasure);
+        var trainStop = trainNote.t + trainNote.d + oneMeasure + (Math.random() * (track.lastNoteEnd - trainNote.t - trainNote.d - oneMeasure));
+        var trainGapEnd = trainNote.t + Math.random() * (trainStop - trainNote.t);
+        var trainMelody = null;
+        for (var i = 0; i < c.length; i++) {
+            if (c[i].indexOf(tni) !== -1) {
+                trainMelody = i;
+                break;
+            }
+        }
 
-        var imageBuf = new Buffer(rows * cols * 3);
-        imageBuf.fill(0);
+        // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+
         for (var i = 0; i < track.notes.length; i++) {
             var note = track.notes[i];
+            var firstT = null;
+            var lastT = null;
+            if (
+                ! (note.t < trainStart || trainStop < note.t) // outside training range
+                && ! ((trainType == 2 || trainType == 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
+                && ! (trainNote.t < note.t && note.t < trainGapEnd && (trainType == 1 || trainType == 3 || (trainType == 4 && c[trainMelody].indexOf(i) !== -1))) // inside gap range
+                && ! (tni === i) // and of course
+            ) {
+                trainNotes.push(note);
+                if (firstT === null || note.t < firstT) {
+                    firstT = note.t;
+                }
+                if (lastT === null || lastT < note.t + note.d) {
+                    lastT = note.t + note.d;
+                }
+            }
+        }
+
+        var hScale = secondsPerTick * 20;
+        var vScale = 3;
+        var bpp = 3; // bytes per pixel
+        var rows = 128 * vScale; // vScale sub-semitones per MIDI note
+        var cols = Math.ceil((lastT - firstT) * hScale);
+        var imageBuf = new Buffer(rows * cols * 3);
+        imageBuf.fill(0);
+        for (var i = 0; i < trainNotes.length; i++) {
+            var note = trainNotes[i];
             for (var j = Math.round(note.t * hScale); j < Math.round((note.t + note.d) * hScale); j++) {
                 // colors
                 for (var k = 0; k < 3; k++) {
@@ -319,8 +356,6 @@ fs.readFile(fileIn, function(err, data) {
 
                     if (i === tni) {
                         imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[0][k];
-                    } else if (cSeeds && cSeeds.indexOf(i) !== -1) {
-                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[3][k];
                     } else {
                         for (var l = 0; l < c.length; l++) {
                             if (c[l].indexOf(i) !== -1) {
