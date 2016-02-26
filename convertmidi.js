@@ -198,11 +198,6 @@ fs.readFile(fileIn, function(err, data) {
         tempo: tempo,
     };
 
-    //c onsole.log(midifile.header);
-    //c onsole.log(midifile.tracks);
-    //c onsole.log(tracks[1].nbp);
-    //c onsole.log(dbIn);
-
     //fs.writeFileSync('testdb', JSON.stringify(dbIn));
 
     var tpb = midifile.header.ticksPerBeat;
@@ -220,7 +215,6 @@ fs.readFile(fileIn, function(err, data) {
 
     //for (var n = 0; n < 10; n++) {
         var tni = Math.floor(Math.random() * track.notes.length);
-        console.log('tni', tni);
         var trainNote = track.notes[tni];
 
         var testNotes = [], maxK = 2;
@@ -235,11 +229,11 @@ fs.readFile(fileIn, function(err, data) {
         //} while (s >= silhouetteLimit1 && maxK++ <= 4);
 
         if (s < silhouetteLimit1) {
-            var trainType = 0;
+            //var trainType = 0;
         } else {
-            var trainType = Math.floor(Math.random() * 4); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            //var trainType = Math.floor(Math.random() * 4); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
         }
-        console.log('trainType', trainType);
+            var trainType = 4;
 
         if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
             c = [ [] ];
@@ -320,54 +314,69 @@ fs.readFile(fileIn, function(err, data) {
 
         // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
 
+        var firstT = trainNote.t;
+        var lastT = trainNote.t + trainNote.d;
         for (var i = 0; i < track.notes.length; i++) {
             var note = track.notes[i];
-            var firstT = null;
-            var lastT = null;
             if (
                 ! (note.t < trainStart || trainStop < note.t) // outside training range
-                && ! ((trainType == 2 || trainType == 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
-                && ! (trainNote.t < note.t && note.t < trainGapEnd && (trainType == 1 || trainType == 3 || (trainType == 4 && c[trainMelody].indexOf(i) !== -1))) // inside gap range
+                && ! ((trainType === 0 || trainType === 2) && trainNote.t < note.t) // training type excludes notes after training note
+                && ! ((trainType === 2 || trainType === 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
+                && ! ((trainType === 1 || trainType === 3 || (trainType === 4 && c[trainMelody].indexOf(i) !== -1)) && trainNote.t < note.t && note.t < trainGapEnd) // inside gap range
                 && ! (tni === i) // and of course
             ) {
-                trainNotes.push(note);
-                if (firstT === null || note.t < firstT) {
+                trainNotes.push(i);
+
+                if (note.t < firstT) {
                     firstT = note.t;
                 }
-                if (lastT === null || lastT < note.t + note.d) {
+                if (lastT < note.t + note.d) {
                     lastT = note.t + note.d;
                 }
             }
         }
+        console.log('trainType', trainType);
+        console.log('firstT', firstT);
+        console.log('trainT', trainNote.t);
+        console.log('lastT', lastT);
 
         var hScale = secondsPerTick * 20;
         var vScale = 3;
-        var bpp = 3; // bytes per pixel
+        var bpp = 1; // bytes per pixel
         var rows = 128 * vScale; // vScale sub-semitones per MIDI note
         var cols = Math.ceil((lastT - firstT) * hScale);
-        var imageBuf = new Buffer(rows * cols * 3);
+        //var cols = Math.ceil(track.lastNoteEnd * hScale);
+        var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
         for (var i = 0; i < trainNotes.length; i++) {
-            var note = trainNotes[i];
-            for (var j = Math.round(note.t * hScale); j < Math.round((note.t + note.d) * hScale); j++) {
-                // colors
-                for (var k = 0; k < 3; k++) {
-                    imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = Math.floor(note.v * (255 / 127));
+            var note = track.notes[trainNotes[i]];
+            var lc = Math.round((note.t - firstT) * hScale);
+            var uc = Math.round((note.t + note.d - firstT) * hScale);
+            for (var j = lc; j < uc; j++) {
+                colors: for (var k = 0; k < bpp; k++) {
+                    idx = ((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k;
 
-                    if (i === tni) {
-                        imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[0][k];
-                    } else {
-                        for (var l = 0; l < c.length; l++) {
-                            if (c[l].indexOf(i) !== -1) {
-                                imageBuf[((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k] = colors[l+1][k];
-                            }
-                        }
-                    }
+                    //if (trainNotes[i] === tni) {
+                    //    imageBuf[idx] = colors[0][k];
+                    //    continue colors;
+                    //} else {
+                    //    for (var l = 0; l < c.length; l++) {
+                    //        if (c[l].indexOf(trainNotes[i]) !== -1) {
+                    //            imageBuf[idx] = colors[l+1][k];
+                    //            continue colors;
+                    //        }
+                    //    }
+                    //}
+                    imageBuf[idx] = Math.floor(note.v * (255 / 127));
                 }
             }
         }
-        var png = new Png(imageBuf, cols, rows, 'rgb');
-        //var png = new Png(imageBuf, cols, rows, 'gray', 8);
+        // training note indicator line
+        for (var i = 0; i < rows; i++) {
+            imageBuf[Math.round(i * cols + (trainNote.t - firstT) * hScale)] = 255;
+        }
+        //var png = new Png(imageBuf, cols, rows, 'rgb');
+        var png = new Png(imageBuf, cols, rows, 'gray', 8);
         png.encode(function(image) {
             fs.writeFileSync(fileIn.replace(fileRE, '$1.train.' + '1'), image);
         });
