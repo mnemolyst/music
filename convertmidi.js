@@ -186,18 +186,17 @@ fs.readFile(fileIn, function(err, data) {
         return min;
     }
 
-    var dbIn = {
-        name: track.name,
-        notes: track.notes,
-        staff: {
-            noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-            keySig: [0, 0, 0, 0, 0, 0, 0],
-            timeDiv: timeDiv,
-        },
-        ticksPerBeat: midifile.header.ticksPerBeat,
-        tempo: tempo,
-    };
-
+    //var dbIn = {
+    //    name: track.name,
+    //    notes: track.notes,
+    //    staff: {
+    //        noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
+    //        keySig: [0, 0, 0, 0, 0, 0, 0],
+    //        timeDiv: timeDiv,
+    //    },
+    //    ticksPerBeat: midifile.header.ticksPerBeat,
+    //    tempo: tempo,
+    //};
     //fs.writeFileSync('testdb', JSON.stringify(dbIn));
 
     var tpb = midifile.header.ticksPerBeat;
@@ -213,7 +212,7 @@ fs.readFile(fileIn, function(err, data) {
         [0xff, 0, 0xff],
     ];
 
-    //for (var n = 0; n < 10; n++) {
+    for (var n = 0; n < 1; n++) {
         var tni = Math.floor(Math.random() * track.notes.length);
         var trainNote = track.notes[tni];
 
@@ -229,11 +228,10 @@ fs.readFile(fileIn, function(err, data) {
         //} while (s >= silhouetteLimit1 && maxK++ <= 4);
 
         if (s < silhouetteLimit1) {
-            //var trainType = 0;
+            var trainType = 0;
         } else {
-            //var trainType = Math.floor(Math.random() * 4); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
         }
-            var trainType = 4;
 
         if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
             c = [ [] ];
@@ -299,7 +297,6 @@ fs.readFile(fileIn, function(err, data) {
             } while ((s >= silhouetteLimit2 || --stepSize > 1) && lastC < track.notes.length);
         }
 
-        // build training set
         var trainNotes = [];
         var trainStart = Math.random() * (trainNote.t - oneMeasure);
         var trainStop = trainNote.t + trainNote.d + oneMeasure + (Math.random() * (track.lastNoteEnd - trainNote.t - trainNote.d - oneMeasure));
@@ -311,14 +308,21 @@ fs.readFile(fileIn, function(err, data) {
                 break;
             }
         }
+        var padL = Math.floor(Math.random() * 8 * oneMeasure); // units of oneMeasure
+        var padR = Math.floor(Math.random() * 8 * oneMeasure);
+        var padB = Math.floor(Math.random() * 24); // units of MIDI notes
+        var padT = Math.floor(Math.random() * 24);
+        //console.log('pad', padL, padR, padB, padT);
+        //console.log('trainType', trainType);
 
-        // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
-
+        // build training set
         var firstT = trainNote.t;
         var lastT = trainNote.t + trainNote.d;
+        var lowN = trainNote.n;
+        var highN = trainNote.n;
         for (var i = 0; i < track.notes.length; i++) {
             var note = track.notes[i];
-            if (
+            if ( // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
                 ! (note.t < trainStart || trainStop < note.t) // outside training range
                 && ! ((trainType === 0 || trainType === 2) && trainNote.t < note.t) // training type excludes notes after training note
                 && ! ((trainType === 2 || trainType === 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
@@ -327,34 +331,27 @@ fs.readFile(fileIn, function(err, data) {
             ) {
                 trainNotes.push(i);
 
-                if (note.t < firstT) {
-                    firstT = note.t;
-                }
-                if (lastT < note.t + note.d) {
-                    lastT = note.t + note.d;
-                }
+                firstT = note.t < firstT ? note.t : firstT;
+                lastT = lastT < note.t + note.d ? note.t + note.d : lastT;
+                lowN = note.n < lowN ? note.n : lowN;
+                highN = highN < note.n ? note.n : highN;
             }
         }
-        console.log('trainType', trainType);
-        console.log('firstT', firstT);
-        console.log('trainT', trainNote.t);
-        console.log('lastT', lastT);
 
         var hScale = secondsPerTick * 20;
         var vScale = 3;
         var bpp = 1; // bytes per pixel
-        var rows = 128 * vScale; // vScale sub-semitones per MIDI note
-        var cols = Math.ceil((lastT - firstT) * hScale);
-        //var cols = Math.ceil(track.lastNoteEnd * hScale);
+        var rows = (highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
+        var cols = Math.ceil((lastT - firstT + padL + padR) * hScale);
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
         for (var i = 0; i < trainNotes.length; i++) {
             var note = track.notes[trainNotes[i]];
-            var lc = Math.round((note.t - firstT) * hScale);
-            var uc = Math.round((note.t + note.d - firstT) * hScale);
+            var lc = Math.round((note.t - firstT + padL) * hScale);
+            var uc = Math.round((note.t + note.d - firstT + padL) * hScale);
             for (var j = lc; j < uc; j++) {
                 colors: for (var k = 0; k < bpp; k++) {
-                    idx = ((rows - (note.n + 69) * vScale - 2) * cols + j) * bpp + k;
+                    idx = ((rows - (note.n - lowN + padB) * vScale - 2) * cols + j) * bpp + k;
 
                     //if (trainNotes[i] === tni) {
                     //    imageBuf[idx] = colors[0][k];
@@ -371,14 +368,33 @@ fs.readFile(fileIn, function(err, data) {
                 }
             }
         }
-        // training note indicator line
+        // training note indicator line TODO move this a little
         for (var i = 0; i < rows; i++) {
-            imageBuf[Math.round(i * cols + (trainNote.t - firstT) * hScale)] = 255;
+            for (var k = 0; k < 3; k++) {
+                imageBuf[Math.round(i * cols + (trainNote.t - firstT + padL) * hScale) * bpp + k] = 255;
+            }
         }
+
+        (function() {
+            var dataFile = fileIn.replace(fileRE, '$1.train.data.' + n + '.proto');
+            var data = 'channels: 1\nheight: ' + rows + '\nwidth: ' + cols + '\ndata: "';
+            for (var i = 0; i < imageBuf.length; i++) {
+                data += '\\x' + Number(imageBuf[i]).toString(16);
+            }
+            data += '"';
+            fs.writeFileSync(dataFile, data);
+
+            var noteFile = fileIn.replace(fileRE, '$1.train.note.' + n);
+            var data = '
+        })();
+
         //var png = new Png(imageBuf, cols, rows, 'rgb');
-        var png = new Png(imageBuf, cols, rows, 'gray', 8);
-        png.encode(function(image) {
-            fs.writeFileSync(fileIn.replace(fileRE, '$1.train.' + '1'), image);
-        });
-    //}
+        //var png = new Png(imageBuf, cols, rows, 'gray', 8);
+        //(function() {
+        //    var fileName = fileIn.replace(fileRE, '$1.train.' + n + '.png');
+        //    png.encode(function(image) {
+        //        fs.writeFileSync(fileName, image);
+        //    });
+        //})();
+    }
 });
