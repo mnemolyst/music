@@ -1,4 +1,5 @@
-var a = [1, 2, 3];
-for (var v of a) {
-    console.log(Number(v).toString(8));
-}
+var exec = require('child_process').exec;
+
+exec('ls -l', function(err, stdout) {
+    console.log(stdout);
+});
