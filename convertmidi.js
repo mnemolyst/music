@@ -2,17 +2,17 @@ var fs = require('fs');
 var Png = require('png').Png;
 var midiFile = require('./public/javascripts/lib/jasmid/midifile');
 var childProcess = require('child_process');
+var path = require('path');
 //var p = require('promise-extended');
 //var Promise = p.Promise;
 
 var fileIn = process.argv[2];
-var fileRE = /^(.*)\.mid$/;
-var imageFileN = 1;
-var thisImageCount = 0;
-var importFile = fileIn.replace(fileRE, '$1.import.py');
-var imageFile = fileIn.replace(fileRE, '$1.image.' + String(imageFileN) + '.py');
-fs.writeFileSync(importFile, 'import lmdb\n');
-fs.writeFileSync(imageFile, 'import lmdb\nenv=lmdb.open(\'midi/lmdb/images\')\ntr=env.begin(None,None,True)\n');
+var importFileN = 1;
+var thisImportCount = 0;
+var trainTest = 'test';
+//var importFile = __dirname + '/caffe/' + trainTest + '/' + path.basename(fileIn, '.mid') + '.import.' + String(importFileN) + '.py';
+var importFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.import.' + String(importFileN) + '.py');
+fs.writeFileSync(importFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\n');
 
 var silhouetteLimit1 = 0.8;
 var silhouetteLimit2 = 0.4;
@@ -345,7 +345,7 @@ fs.readFile(fileIn, function(err, data) {
         var padT = Math.floor(Math.random() * 24);
         var indicatorOffset = Math.round(Math.random() * (trainNote.t - track.notes[lastBeforeTrainNote].t + ticksPerBeat));
         //var indicatorOffset = Math.round(0 *             (trainNote.t - track.notes[lastBeforeTrainNote].t + 4 * ticksPerBeat));
-        var indicatorT = track.notes[lastBeforeTrainNote].t + indicatorOffset - firstT + padL;
+        var indicatorT = track.notes[lastBeforeTrainNote].t + indicatorOffset;
 
         // draw image
         var hScale = secondsPerTick * 20;
@@ -385,7 +385,7 @@ fs.readFile(fileIn, function(err, data) {
         // training note indicator line
         for (var i = 0; i < rows; i++) {
             for (var k = 0; k < bpp; k++) {
-                var idx = Math.round(i * cols + indicatorT * hScale) * bpp + k;
+                var idx = Math.round(i * cols + (indicatorT - firstT + padL) * hScale) * bpp + k;
                 imageBuf[idx] = 255;
             }
         }
@@ -397,6 +397,7 @@ fs.readFile(fileIn, function(err, data) {
             duration: String(trainNote.d),
             rows: rows,
             cols: cols,
+            bpp: bpp,
         };
     }
 
@@ -413,27 +414,39 @@ fs.readFile(fileIn, function(err, data) {
     //};
     //fs.writeFileSync('testdb', JSON.stringify(dbIn));
     var n = 0;
-    for (var m = 0; m < 100; m++) {
-        //var tni = Math.floor(Math.random() * track.notes.length);
-
-        //for (var s = 0; s < 50; s++) {
-            //console.log(trainNote);
-
+    for (var m = 2; m < track.notes.length; m++) {
+    //for (var m = 20; m < 21; m++) {
+        for (var s = 0; s < 2; s++) {
             var child = (function() {
                 var idx = n;
+                var tni = m;
                 var obj = {
                     idx: idx,
                     exe: '/usr/local/bin/protoc',
                     args: ['--encode=caffe.Datum', 'caffe.proto'],
-                    opts: { cwd: process.cwd() + '/protobuf' },
+                    opts: { cwd: path.join(__dirname, '../caffe/src/caffe/proto') },
                     data: '',
                     spawned: false,
                 };
                 obj.spawn = function() {
-                    var trainPoint = generateTrainingPoint(m);
-                    noteData[n] = trainPoint.note;
-                    timeData[n] = trainPoint.time;
-                    durationData[n] = trainPoint.duration;
+                    var trainPoint = generateTrainingPoint(tni);
+                    noteData[idx] = trainPoint.note;
+                    timeData[idx] = trainPoint.time;
+                    durationData[idx] = trainPoint.duration;
+
+                    // generate png image
+                    //if (trainPoint.bpp === 3) {
+                    //    var png = new Png(trainPoint.image, trainPoint.cols, trainPoint.rows, 'rgb');
+                    //} else {
+                    //    var png = new Png(trainPoint.image, trainPoint.cols, trainPoint.rows, 'gray', 8);
+                    //}
+                    //(function() {
+                    //    //var fileName = fileIn.replace(fileRE, '$1.train.' + idx + '.png');
+                    //    var fileName = __dirname + '/midi/' + path.basename(fileIn, '.mid') + '.train.' + idx + '.png';
+                    //    png.encode(function(image) {
+                    //        fs.writeFileSync(fileName, image);
+                    //    });
+                    //})();
 
                     var trainProtobuf = 'channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "';
                     for (var i = 0; i < trainPoint.image.length; i++) {
@@ -443,8 +456,7 @@ fs.readFile(fileIn, function(err, data) {
 
                     obj.protoc = childProcess.spawn(obj.exe, obj.args, obj.opts);
                     obj.spawned = true;
-                    console.log('inc', ++protocCount);
-                    console.log('total', ++totalSpawned);
+                    protocCount++;
                     obj.protoc.stdout.on('data', function(data) {
                         var dataBuf = new Buffer(data);
                         for (var i = 0; i < dataBuf.length; i++) {
@@ -456,17 +468,28 @@ fs.readFile(fileIn, function(err, data) {
                         }
                     });
                     obj.protoc.stdout.on('end', function() {
-                        fs.appendFileSync(imageFile, 'tr.put(\'' + String(idx) + '\',\'' + obj.data + '\')\n');
-                        if (++thisImageCount >= 10) {
-                            fs.appendFileSync(imageFile, 'tr.commit()\n');
-                            thisImageCount = 0;
-                            imageFile = fileIn.replace(fileRE, '$1.image.' + String(++imageFileN) + '.py');
-                            fs.writeFileSync(imageFile, 'import lmdb\nenv=lmdb.open(\'midi/lmdb/images\')\ntr=env.begin(None,None,True)\n');
+                        fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/images\',envSize)\ntr=env.begin(None,None,True)\n');
+                        fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + obj.data + '\')\n');
+                        fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
+                        fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/notes\',envSize)\ntr=env.begin(None,None,True)\n');
+                        fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + noteData[idx] + '\')\n');
+                        fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
+                        fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/times\',envSize)\ntr=env.begin(None,None,True)\n');
+                        fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + timeData[idx] + '\')\n');
+                        fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
+                        fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/durations\',envSize)\ntr=env.begin(None,None,True)\n');
+                        fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + durationData[idx] + '\')\n');
+                        fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
+                        if (++thisImportCount >= 10) {
+                            thisImportCount = 0;
+                            //importFile = fileIn.replace(fileRE, '$1.import.' + String(++importFileN) + '.py');
+                            importFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.import.' + String(++importFileN) + '.py');
+                            fs.writeFileSync(importFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\n');
                         }
                     });
                     obj.protoc.on('exit', function() {
                         delete childProcesses[idx];
-                        console.log('dec', --protocCount);
+                        protocCount--
                         for (var i in childProcesses) {
                             if (protocCount < childLimit && ! childProcesses[i].spawned) {
                                 childProcesses[i].spawn();
@@ -483,35 +506,7 @@ fs.readFile(fileIn, function(err, data) {
             }
             childProcesses[n] = child;
 
-            //if (bpp === 3) {
-            //    var png = new Png(trainPoint.image, cols, rows, 'rgb');
-            //} else {
-            //    var png = new Png(trainPoint.image, cols, rows, 'gray', 8);
-            //}
-            //(function() {
-            //    var fileName = fileIn.replace(fileRE, '$1.train.' + n + '.png');
-            //    png.encode(function(image) {
-            //        fs.writeFileSync(fileName, image);
-            //    });
-            //})();
-
             n++;
-        //}
+        }
     }
-
-    fs.appendFileSync(importFile, 'env=lmdb.open(\'midi/lmdb/notes\')\ntr=env.begin(None,None,True)\n');
-    for (var j = 0; j < noteData.length; j++) {
-        fs.appendFileSync(importFile, 'tr.put(\'' + String(j) + '\',\'' + noteData[j] + '\')\n');
-    }
-    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
-    fs.appendFileSync(importFile, 'env=lmdb.open(\'midi/lmdb/times\')\ntr=env.begin(None,None,True)\n');
-    for (var j = 0; j < timeData.length; j++) {
-        fs.appendFileSync(importFile, 'tr.put(\'' + String(j) + '\',\'' + timeData[j] + '\')\n');
-    }
-    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
-    fs.appendFileSync(importFile, 'env=lmdb.open(\'midi/lmdb/durations\')\ntr=env.begin(None,None,True)\n');
-    for (var j = 0; j < durationData.length; j++) {
-        fs.appendFileSync(importFile, 'tr.put(\'' + String(j) + '\',\'' + durationData[j] + '\')\n');
-    }
-    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
 });

@@ -1,19 +1,23 @@
-var fs = require('fs');
-var Png = require('png').Png;
-fs.readFile('protobuf/imagetest.out', function(err, data) {
-    var dataBuf = new Buffer(data);
-    var imageBuf = new Buffer(673 * 156);
-    var n;
-    var j = 0;
-    for (var i = 0; i < dataBuf.length; i+=4) {
-        n = parseInt(dataBuf.slice(i+1, i+4), 8);
-        imageBuf[j++] = n;
-    }
-    var png = new Png(imageBuf, 673, 156, 'gray', 8);
-    (function() {
-        var fileName = 'protobuf/imagetest.png';
-        png.encode(function(image) {
-            fs.writeFileSync(fileName, image);
-        });
-    })();
-});
+//var fs = require('fs');
+//var Png = require('png').Png;
+//fs.readFile('protobuf/imagetest.out', function(err, data) {
+//    var dataBuf = new Buffer(data);
+//    var imageBuf = new Buffer(673 * 156);
+//    var n;
+//    var j = 0;
+//    for (var i = 0; i < dataBuf.length; i+=4) {
+//        n = parseInt(dataBuf.slice(i+1, i+4), 8);
+//        imageBuf[j++] = n;
+//    }
+//    var png = new Png(imageBuf, 673, 156, 'gray', 8);
+//    (function() {
+//        var fileName = 'protobuf/imagetest.png';
+//        png.encode(function(image) {
+//            fs.writeFileSync(fileName, image);
+//        });
+//    })();
+//});
+
+var path = require('path');
+var importFile = __dirname + '/caffe/train/' + path.basename('/hello/test.mid', '.mid') + '.import.' + String(3) + '.py';
+console.log(importFile);
