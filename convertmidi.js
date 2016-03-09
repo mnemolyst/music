@@ -5,14 +5,19 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var fileIn = process.argv[2];
-var importFileN = 1;
-var thisImportCount = 0;
 var trainTest = 'train';
-//var importFile = __dirname + '/caffe/' + trainTest + '/' + path.basename(fileIn, '.mid') + '.import.' + String(importFileN) + '.py';
-var imageFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
-var noteFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.notes.py');
-var timeFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
+var genStart = 300;
+var genEnd = 301;
+var genIter = 1;
+//var vScale = 1;
+var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
+//var cols = Math.ceil((Math.max(lastT, indicatorT) - firstT + padL + padR) * minResScale);
+var cols = 128;
+
+var fileIn = process.argv[2];
+var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
+var noteFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.notes.py');
+var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
 var durationFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.durations.py');
 fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/images\'   , envSize)\ntr=env.begin(None,None,True)\n');
 fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/notes\'    , envSize)\ntr=env.begin(None,None,True)\n');
@@ -92,6 +97,7 @@ fs.readFile(fileIn, function(err, data) {
     var ticksPerBeat = midifile.header.ticksPerBeat;
     //var oneMeasure = ticksPerBeat * tsNum / tsDen; // one measure's worth of ticks
     var secondsPerTick = tempo / ticksPerBeat;
+    var minResScale = secondsPerTick * 16; // horiz scale to make 1/16 sec (1/64 note at 120 bpm) occupy 1 pixel
     var track = tracks[1];
 
     function dist(a, b) {
@@ -313,12 +319,12 @@ fs.readFile(fileIn, function(err, data) {
 
         var firstT = trainNote.t;
         var lastT = trainNote.t + trainNote.d;
-        var lowN = trainNote.n;
-        var highN = trainNote.n;
+        //var lowN = 0;//trainNote.n;
+        //var highN = 127;//trainNote.n;
         var lastBeforeTrainNote = 0;
         for (var i = 0; i < track.notes.length; i++) {
             var note = track.notes[i];
-            if ( // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            if (
                 ! (note.t < trainStart || trainStop < note.t) // outside training range
                 && ! ((trainType === 0 || trainType === 2) && trainNote.t < note.t) // training type excludes notes after training note
                 && ! ((trainType === 2 || trainType === 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
@@ -329,37 +335,48 @@ fs.readFile(fileIn, function(err, data) {
 
                 firstT = note.t < firstT ? note.t : firstT;
                 lastT = lastT < note.t + note.d ? note.t + note.d : lastT;
-                lowN = note.n < lowN ? note.n : lowN;
-                highN = highN < note.n ? note.n : highN;
+                //lowN = note.n < lowN ? note.n : lowN;
+                //highN = highN < note.n ? note.n : highN;
                 if (lastBeforeTrainNote < i && i < tni) {
                     lastBeforeTrainNote = i;
                 }
             }
         }
-
-        var padL = Math.floor(Math.random() * 32 * ticksPerBeat);
-        var padR = Math.floor(Math.random() * 32 * ticksPerBeat);
-        var padB = Math.floor(Math.random() * 24); // units of MIDI notes
-        var padT = Math.floor(Math.random() * 24);
         var indicatorOffset = Math.round(Math.random() * (trainNote.t - track.notes[lastBeforeTrainNote].t + ticksPerBeat));
         //var indicatorOffset = Math.round(0 *             (trainNote.t - track.notes[lastBeforeTrainNote].t + 4 * ticksPerBeat));
         var indicatorT = track.notes[lastBeforeTrainNote].t + indicatorOffset;
 
-        // draw image
-        var hScale = secondsPerTick * 20;
-        var vScale = 3;
-        var rows = (highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
-        var cols = Math.ceil((Math.max(lastT, track.notes[lastBeforeTrainNote].t + indicatorOffset) - firstT + padL + padR) * hScale);
+        ////////////////
+        // draw image //
+        ////////////////
         var bpp = 1; // bytes per pixel
+        //var padL = Math.floor(Math.random() * 16 * ticksPerBeat);
+        //var padR = Math.floor(Math.random() * 16 * ticksPerBeat);
+        var extraT = Math.round(cols / minResScale - (Math.max(lastT, indicatorT) - firstT));
+        if (extraT > 0) {
+            var padL = Math.round(extraT * Math.random());
+            var padR = extraT - padL;
+            var shift = 0;
+        } else {
+            var padL = 0, padR = 0;
+            var shift = Math.random() * cols / minResScale - indicatorT;
+            console.log(shift);
+        }
+        var padB = 0;//Math.floor(Math.random() * 24); // units of MIDI notes
+        var padT = 0;//Math.floor(Math.random() * 24);
+
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
         for (var i = 0; i < trainNotes.length; i++) {
             var note = track.notes[trainNotes[i]];
-            var lc = Math.round((note.t - firstT + padL) * hScale);
-            var uc = Math.round((note.t + note.d - firstT + padL) * hScale);
+            var lc = Math.round((note.t - firstT + padL + shift) * minResScale);
+            var uc = Math.round((note.t + note.d - firstT + padL + shift) * minResScale);
+            lc = Math.max(0, Math.min(lc, cols));
+            uc = Math.max(0, Math.min(uc, cols));
             for (var j = lc; j < uc; j++) {
                 colors: for (var k = 0; k < bpp; k++) {
-                    idx = ((rows - (note.n - lowN + padB) * vScale - 2) * cols + j) * bpp + k;
+                    //idx = ((rows - (note.n - lowN + padB) * vScale - 2) * cols + j) * bpp + k;
+                    idx = ((rows - note.n - 1) * cols + j) * bpp + k;
 
                     if (bpp === 3) {
                         if (trainNotes[i] === tni) {
@@ -383,16 +400,16 @@ fs.readFile(fileIn, function(err, data) {
         // training note indicator line
         for (var i = 0; i < rows; i++) {
             for (var k = 0; k < bpp; k++) {
-                var idx = Math.round(i * cols + (indicatorT - firstT + padL) * hScale) * bpp + k;
+                var idx = Math.round(i * cols + (indicatorT - firstT + padL + shift) * minResScale) * bpp + k;
                 imageBuf[idx] = 255;
             }
         }
 
         return {
             image: imageBuf,
-            note: String(trainNote.n - lowN + padB),
-            time: String(trainNote.t - indicatorT),
-            duration: String(trainNote.d),
+            note: trainNote.n,// - lowN + padB,
+            time: trainNote.t - indicatorT,
+            duration: trainNote.d,
             rows: rows,
             cols: cols,
             bpp: bpp,
@@ -427,16 +444,25 @@ fs.readFile(fileIn, function(err, data) {
             var self = this;
             return new Promise(function(resolve, reject) {
                 var trainPoint = generateTrainingPoint(self.tni);
+                self.trainPoint = trainPoint;
 
-                var imageProto = 'channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "';
+                var imageProto = '';
                 for (var i = 0; i < trainPoint.image.length; i++) {
                     imageProto += '\\x' + Number(trainPoint.image[i]).toString(16); // google protobuf escaped hex
                 }
-                imageProto += '"';
-                var prototxt = [imageProto];
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.note) + '"');
+
+                var noteProto = '';
+                for (var i = 0; i < 128; i++) {
+                    noteProto += trainPoint.note === i ? '\\x01' : '\\x00';
+                }
+
+                var prototxt = [];
+                prototxt.push('channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "' + imageProto + '"');
+                prototxt.push('channels: 128\nheight: 1\nwidth: 1\ndata: "' + noteProto + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.time) + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.duration) + '"');
+
+                //console.log('tni', self.tni, 'note', trainPoint.note, 'time', trainPoint.time, 'duration', trainPoint.duration);
 
                 for (var i = 0; i < prototxt.length; i++) {
                     self.children.push(new Promise(function(resolve, reject) {
@@ -468,7 +494,7 @@ fs.readFile(fileIn, function(err, data) {
 
     var scheduler = {
         task: null,
-        make: function(tni) {
+        make: function(tni, max, iter) {
             this.task = Object.create(childProto, {
                 tni: {
                     writable: true, configurable: true, value: tni,
@@ -480,278 +506,65 @@ fs.readFile(fileIn, function(err, data) {
                     writable: true, configurable: true, value: ['', '', '', ''],
                 },
             });
+            this.max = max;
+            this.iter = iter;
             return this;
         },
-        go: function(max) {
+        go: function(i) {
             var self = this;
-            var taskP = self.task.spawn();
-            taskP.then(function(data) {
-                new Promise(function(resolve, reject) {
-                    var tasks = [
-                        new Promise(function(resolve, reject) {
-                            fs.appendFile(imageFile, 'tr.put(\'' + String(self.task.tni) + '\',\'' + data[0] + '\')\n', resolve);
-                        }),
-                        new Promise(function(resolve, reject) {
-                            fs.appendFile(noteFile, 'tr.put(\'' + String(self.task.tni) + '\',\'' + data[1] + '\')\n', resolve);
-                        }),
-                        new Promise(function(resolve, reject) {
-                            fs.appendFile(timeFile, 'tr.put(\'' + String(self.task.tni) + '\',\'' + data[2] + '\')\n', resolve);
-                        }),
-                        new Promise(function(resolve, reject) {
-                            fs.appendFile(durationFile, 'tr.put(\'' + String(self.task.tni) + '\',\'' + data[3] + '\')\n', resolve);
-                        }),
-                    ];
-                    Promise.all(tasks).then(resolve);
-                }).then(function() {
-                    if (self.task.tni < max) {
-                        self.make(self.task.tni + 1).go(max);
-                    }
+            var i = i || 0;
+            if (self.task.tni < self.max) {
+                self.task.spawn().then(function(data) {
+                    new Promise(function(resolve, reject) {
+                        var idx = String(self.task.tni * self.iter + i);
+                        var tasks = [
+                            new Promise(function(resolve, reject) {
+                                fs.appendFile(imageFile,    'tr.put(\'' + idx + '\',\'' + data[0] + '\')\n', resolve);
+                                ////////////////////////
+                                // generate png image //
+                                ////////////////////////
+                                if (self.task.trainPoint.bpp === 3) {
+                                    var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'rgb');
+                                } else {
+                                    var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'gray', 8);
+                                }
+                                (function() {
+                                    var fileName = path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.' + idx + '.png');
+                                    png.encode(function(image) {
+                                        fs.writeFileSync(fileName, image);
+                                    });
+                                })();
+                                ////////////////////////
+                            }),
+                            new Promise(function(resolve, reject) {
+                                fs.appendFile(noteFile,     'tr.put(\'' + idx + '\',\'' + data[1] + '\')\n', resolve);
+                            }),
+                            new Promise(function(resolve, reject) {
+                                fs.appendFile(timeFile,     'tr.put(\'' + idx + '\',\'' + data[2] + '\')\n', resolve);
+                            }),
+                            new Promise(function(resolve, reject) {
+                                fs.appendFile(durationFile, 'tr.put(\'' + idx + '\',\'' + data[3] + '\')\n', resolve);
+                            }),
+                        ];
+                        Promise.all(tasks).then(resolve);
+                    }).then(function() {
+                        if (i + 1 < self.iter) {
+                            self.make(self.task.tni, self.max, self.iter).go(i + 1);
+                        } else {
+                            console.log(self.task.tni);
+                            self.make(self.task.tni + 1, self.max, self.iter).go(0);
+                        }
+                    });
                 });
-            });
+            } else {
+                fs.appendFile(imageFile,    'tr.commit()');
+                fs.appendFile(noteFile,     'tr.commit()');
+                fs.appendFile(timeFile,     'tr.commit()');
+                fs.appendFile(durationFile, 'tr.commit()');
+            }
         },
     }
 
-    scheduler.make(1).go(10);
-
-    ///////////////////////////
-
-    //for (var tni = 2; tni < track.notes.length; tni++) {
-    //for (var tni = 20; tni < 21; tni++) {
-    //    for (var s = 0; s < 2; s++) {
-    //        var trainPoint = generateTrainingPoint(tni);
-
-    //        var imageChild = (function() {
-    //            var idx = n;
-    //            var obj = {
-    //                idx: idx,
-    //                trainPoint: trainPoint,
-    //                exe: '/usr/local/bin/protoc',
-    //                args: ['--encode=caffe.Datum', 'caffe.proto'],
-    //                opts: { cwd: path.join(__dirname, '../caffe/src/caffe/proto') },
-    //                data: '',
-    //                spawned: false,
-    //                p: new Promise(),
-    //            };
-    //            obj.spawn = function() {
-    //                return new Promise(function(resolve, reject) {
-    //                    // generate png image
-    //                    //if (obj.trainPoint.bpp === 3) {
-    //                    //    var png = new Png(obj.trainPoint.image, obj.trainPoint.cols, obj.trainPoint.rows, 'rgb');
-    //                    //} else {
-    //                    //    var png = new Png(obj.trainPoint.image, obj.trainPoint.cols, obj.trainPoint.rows, 'gray', 8);
-    //                    //}
-    //                    //(function() {
-    //                    //    //var fileName = fileIn.replace(fileRE, '$1.train.' + idx + '.png');
-    //                    //    var fileName = __dirname + '/midi/' + path.basename(fileIn, '.mid') + '.train.' + idx + '.png';
-    //                    //    png.encode(function(image) {
-    //                    //        fs.writeFileSync(fileName, image);
-    //                    //    });
-    //                    //})();
-
-    //                    var protobuf = 'channels: 1\nheight: ' + obj.trainPoint.rows + '\nwidth: ' + obj.trainPoint.cols + '\ndata: "';
-    //                    for (var i = 0; i < obj.trainPoint.image.length; i++) {
-    //                        protobuf += '\\x' + Number(obj.trainPoint.image[i]).toString(16);
-    //                    }
-    //                    protobuf += '"';
-
-    //                    obj.protoc = childProcess.spawn(obj.exe, obj.args, obj.opts);
-    //                    obj.spawned = true;
-    //                    protocCount++;
-    //                    obj.protoc.stdout.on('data', function(data) {
-    //                        var dataBuf = new Buffer(data);
-    //                        for (var i = 0; i < dataBuf.length; i++) {
-    //                            if (dataBuf[i] < 16) {
-    //                                obj.data += '\\x0' + Number(dataBuf[i]).toString(16); // python escaped hex
-    //                            } else {
-    //                                obj.data += '\\x' + Number(dataBuf[i]).toString(16);
-    //                            }
-    //                        }
-    //                    });
-    //                    obj.protoc.on('exit', function() {
-    //                        //for (var i in childProcesses) {
-    //                        //    if (protocCount < childLimit && ! childProcesses[i].spawned) {
-    //                        //        childProcesses[i].spawn();
-    //                        //    }
-    //                        //}
-    //                        //delete childProcesses[idx];
-    //                        protocCount--
-    //                        resolve();
-    //                    });
-    //                    obj.protoc.stdin.end(protobuf);
-    //                });
-    //            };
-
-    //            return obj;
-    //        })();
-    //        var noteChild = (function() {
-    //            var idx = n;
-    //            var obj = {
-    //                idx: idx,
-    //                trainPoint: trainPoint,
-    //                exe: '/usr/local/bin/protoc',
-    //                args: ['--encode=caffe.Datum', 'caffe.proto'],
-    //                opts: { cwd: path.join(__dirname, '../caffe/src/caffe/proto') },
-    //                data: '',
-    //                spawned: false,
-    //                p: new Promise(),
-    //            };
-    //            obj.spawn = function() {
-    //                return new Promise(function(resolve, reject) {
-    //                    var protobuf = 'channels: 1\nheight: 1\nwidth: 1\ndata: "' + obj.trainPoint.note + '"';
-
-    //                    obj.protoc = childProcess.spawn(obj.exe, obj.args, obj.opts);
-    //                    obj.spawned = true;
-    //                    protocCount++;
-    //                    obj.protoc.stdout.on('data', function(data) {
-    //                        var dataBuf = new Buffer(data);
-    //                        for (var i = 0; i < dataBuf.length; i++) {
-    //                            if (dataBuf[i] < 16) {
-    //                                obj.data += '\\x0' + Number(dataBuf[i]).toString(16); // python escaped hex
-    //                            } else {
-    //                                obj.data += '\\x' + Number(dataBuf[i]).toString(16);
-    //                            }
-    //                        }
-    //                    });
-    //                    obj.protoc.on('exit', function() {
-    //                        //for (var i in childProcesses) {
-    //                        //    if (protocCount < childLimit && ! childProcesses[i].spawned) {
-    //                        //        childProcesses[i].spawn();
-    //                        //    }
-    //                        //}
-    //                        //delete childProcesses[idx];
-    //                        protocCount--
-    //                        resolve();
-    //                    });
-    //                    obj.protoc.stdin.end(protobuf);
-    //                });
-    //            };
-
-    //            return obj;
-    //        })();
-    //        var timeChild = (function() {
-    //            var idx = n;
-    //            var obj = {
-    //                idx: idx,
-    //                trainPoint: trainPoint,
-    //                exe: '/usr/local/bin/protoc',
-    //                args: ['--encode=caffe.Datum', 'caffe.proto'],
-    //                opts: { cwd: path.join(__dirname, '../caffe/src/caffe/proto') },
-    //                data: '',
-    //                spawned: false,
-    //                p: new Promise(),
-    //            };
-    //            obj.spawn = function() {
-    //                return new Promise(function(resolve, reject) {
-    //                    var protobuf = 'channels: 1\nheight: 1\nwidth: 1\ndata: "' + obj.trainPoint.time + '"';
-
-    //                    obj.protoc = childProcess.spawn(obj.exe, obj.args, obj.opts);
-    //                    obj.spawned = true;
-    //                    protocCount++;
-    //                    obj.protoc.stdout.on('data', function(data) {
-    //                        var dataBuf = new Buffer(data);
-    //                        for (var i = 0; i < dataBuf.length; i++) {
-    //                            if (dataBuf[i] < 16) {
-    //                                obj.data += '\\x0' + Number(dataBuf[i]).toString(16); // python escaped hex
-    //                            } else {
-    //                                obj.data += '\\x' + Number(dataBuf[i]).toString(16);
-    //                            }
-    //                        }
-    //                    });
-    //                    obj.protoc.on('exit', function() {
-    //                        //for (var i in childProcesses) {
-    //                        //    if (protocCount < childLimit && ! childProcesses[i].spawned) {
-    //                        //        childProcesses[i].spawn();
-    //                        //    }
-    //                        //}
-    //                        //delete childProcesses[idx];
-    //                        protocCount--
-    //                        resolve();
-    //                    });
-    //                    obj.protoc.stdin.end(protobuf);
-    //                });
-    //            };
-
-    //            return obj;
-    //        })();
-    //        var durationChild = (function() {
-    //            var idx = n;
-    //            var obj = {
-    //                idx: n,
-    //                trainPoint: trainPoint,
-    //                exe: '/usr/local/bin/protoc',
-    //                args: ['--encode=caffe.Datum', 'caffe.proto'],
-    //                opts: { cwd: path.join(__dirname, '../caffe/src/caffe/proto') },
-    //                data: '',
-    //                spawned: false,
-    //                p: new Promise(),
-    //            };
-    //            obj.spawn = function() {
-    //                return new Promise(function(resolve, reject) {
-    //                    var protobuf = 'channels: 1\nheight: 1\nwidth: 1\ndata: "' + obj.trainPoint.duration + '"';
-
-    //                    obj.protoc = childProcess.spawn(obj.exe, obj.args, obj.opts);
-    //                    obj.spawned = true;
-    //                    protocCount++;
-    //                    obj.protoc.stdout.on('data', function(data) {
-    //                        var dataBuf = new Buffer(data);
-    //                        for (var i = 0; i < dataBuf.length; i++) {
-    //                            if (dataBuf[i] < 16) {
-    //                                obj.data += '\\x0' + Number(dataBuf[i]).toString(16); // python escaped hex
-    //                            } else {
-    //                                obj.data += '\\x' + Number(dataBuf[i]).toString(16);
-    //                            }
-    //                        }
-    //                    });
-    //                    obj.protoc.on('exit', function() {
-    //                        //for (var i in childProcesses) {
-    //                        //    if (protocCount < childLimit && ! childProcesses[i].spawned) {
-    //                        //        childProcesses[i].spawn();
-    //                        //    }
-    //                        //}
-    //                        //delete childProcesses[idx];
-    //                        protocCount--
-    //                        resolve();
-    //                    });
-    //                    obj.protoc.stdin.end(protobuf);
-    //                });
-    //            };
-
-    //            return obj;
-    //        })();
-    //        imageChildren.push(imageChild);
-    //        noteChildren.push(noteChild);
-    //        timeChildren.push(timeChild);
-    //        durationChildren.push(durationChild);
-    //        //childProcesses.push(imageChild, noteChild, timeChild, durationChild);
-    //        //if (protocCount < childLimit) {
-    //        //    imageChild.spawn();
-    //        //}
-    //        promise.promiseList(imageChildren).then(function(images) {
-    //            fs.appendFileSync(imageFile, 'env=lmdb.open(sys.path[0] + \'/images\',envSize)\ntr=env.begin(None,None,True)\n');
-    //            for (var i = 0; i < images.length; i++) {
-    //                fs.appendFileSync(imageFile, 'tr.put(\'' + String(images[i].idx) + '\',\'' + images[i].data + '\')\n');
-    //            }
-    //            fs.appendFileSync(imageFile, 'tr.commit()\nenv.close()\n');
-    //        });
-    //                //obj.protoc.stdout.on('end', function() {
-    //                //    fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/notes\',envSize)\ntr=env.begin(None,None,True)\n');
-    //                //    fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + noteData[idx] + '\')\n');
-    //                //    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
-    //                //    fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/times\',envSize)\ntr=env.begin(None,None,True)\n');
-    //                //    fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + timeData[idx] + '\')\n');
-    //                //    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
-    //                //    fs.appendFileSync(importFile, 'env=lmdb.open(sys.path[0] + \'/durations\',envSize)\ntr=env.begin(None,None,True)\n');
-    //                //    fs.appendFileSync(importFile, 'tr.put(\'' + String(idx) + '\',\'' + durationData[idx] + '\')\n');
-    //                //    fs.appendFileSync(importFile, 'tr.commit()\nenv.close()\n');
-    //                //    if (++thisImportCount >= 10) {
-    //                //        thisImportCount = 0;
-    //                //        //importFile = fileIn.replace(fileRE, '$1.import.' + String(++importFileN) + '.py');
-    //                //        importFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.import.' + String(++importFileN) + '.py');
-    //                //        fs.writeFileSync(importFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\n');
-    //                //    }
-    //                //});
-
-    //        n++;
-    //    }
-    //}
+    //scheduler.make(2, track.notes.length, 1).go();
+    scheduler.make(genStart, genEnd, genIter).go();
 });
