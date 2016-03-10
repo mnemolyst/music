@@ -1,0 +1,395 @@
+name: "Music"
+layer {
+  name: "images"
+  type: "Data"
+  top: "images"
+  include {
+    phase: TRAIN
+  }
+  transform_param {
+    scale: 0.00390625
+  }
+  data_param {
+    source: "music/lmdb/train/images"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "notes"
+  type: "Data"
+  top: "notes"
+  include {
+    phase: TRAIN
+  }
+  data_param {
+    source: "music/lmdb/train/notes"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "times"
+  type: "Data"
+  top: "times"
+  include {
+    phase: TRAIN
+  }
+  data_param {
+    source: "music/lmdb/train/times"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "durations"
+  type: "Data"
+  top: "durations"
+  include {
+    phase: TRAIN
+  }
+  data_param {
+    source: "music/lmdb/train/durations"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "velocities
+  type: "Data"
+  top: "velocities
+  include {
+    phase: TRAIN
+  }
+  data_param {
+    source: "music/lmdb/train/velocities"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "images"
+  type: "Data"
+  top: "images"
+  include {
+    phase: TEST
+  }
+  transform_param {
+    scale: 0.00390625
+  }
+  data_param {
+    source: "music/lmdb/test/images"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "notes"
+  type: "Data"
+  top: "notes"
+  include {
+    phase: TEST
+  }
+  data_param {
+    source: "music/lmdb/test/notes"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "times"
+  type: "Data"
+  top: "times"
+  include {
+    phase: TEST
+  }
+  data_param {
+    source: "music/lmdb/test/times"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "durations"
+  type: "Data"
+  top: "durations"
+  include {
+    phase: TEST
+  }
+  data_param {
+    source: "music/lmdb/test/durations"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "velocities"
+  type: "Data"
+  top: "velocities"
+  include {
+    phase: TEST
+  }
+  data_param {
+    source: "music/lmdb/test/velocities"
+    batch_size: 10
+    backend: LMDB
+  }
+}
+layer {
+  name: "conv1"
+  type: "Convolution"
+  bottom: "images"
+  top: "conv1"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  convolution_param {
+    num_output: 30
+    kernel_h: 3
+    kernel_w: 6
+    stride_h: 1
+    stride:w: 3
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "pool1"
+  type: "Pooling"
+  bottom: "conv1"
+  top: "pool1"
+  pooling_param {
+    pool: MAX
+    kernel_h: 3
+    kernel_w: 5
+    stride_h: 2
+    stride_w: 3
+  }
+}
+layer {
+  name: "conv2"
+  type: "Convolution"
+  bottom: "pool1"
+  top: "conv2"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  convolution_param {
+    num_output: 50
+    kernel_h: 5
+    kernel_w: 8
+    stride_h: 2
+    stride:w: 4
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "pool2"
+  type: "Pooling"
+  bottom: "conv2"
+  top: "pool2"
+  pooling_param {
+    pool: MAX
+    kernel_h: 3
+    kernel_w: 5
+    stride_h: 2
+    stride_w: 3
+  }
+}
+layer {
+  name: "ip1"
+  type: "InnerProduct"
+  bottom: "pool2"
+  top: "ip1"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  inner_product_param {
+    num_output: 500
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "ip1"
+  top: "ip1"
+}
+layer {
+  name: "ip2_note"
+  type: "InnerProduct"
+  bottom: "ip1"
+  top: "ip2_note"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  inner_product_param {
+    num_output: 128
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "ip2_time"
+  type: "InnerProduct"
+  bottom: "ip1"
+  top: "ip2_time"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  inner_product_param {
+    num_output: 1
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "ip2_duration"
+  type: "InnerProduct"
+  bottom: "ip1"
+  top: "ip2_duration"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  inner_product_param {
+    num_output: 1
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+  name: "ip2_velocity"
+  type: "InnerProduct"
+  bottom: "ip1"
+  top: "ip2_velocity"
+  param {
+    lr_mult: 1
+  }
+  param {
+    lr_mult: 2
+  }
+  inner_product_param {
+    num_output: 1
+    weight_filler {
+      type: "xavier"
+    }
+    bias_filler {
+      type: "constant"
+    }
+  }
+}
+layer {
+    name: "loss_note"
+    type: "SoftmaxWithLoss"
+    bottom: "ip2_note"
+    bottom: "notes"
+    top: "loss_note"
+}
+layer {
+    name: "loss_time"
+    type: "EuclideanLoss"
+    bottom: "ip2_time"
+    bottom: "times"
+    top: "loss_time"
+    loss_weight: 0.25
+}
+layer {
+    name: "loss_duration"
+    type: "EuclideanLoss"
+    bottom: "ip2_duration"
+    bottom: "durations"
+    top: "loss_duration"
+    loss_weight: 0.25
+}
+layer {
+    name: "loss_velocity"
+    type: "EuclideanLoss"
+    bottom: "ip2_velocity"
+    bottom: "velocities
+    top: "loss_velocity"
+    loss_weight: 0.25
+}
+layer {
+    name: "accuracy_note"
+    type: "Accuracy"
+    bottom: "ip2_note"
+    bottom: "notes"
+    top: "accuracy_note"
+    include {
+        phase: TEST
+    }
+}
+layer {
+    name: "accuracy_time"
+    type: "Accuracy"
+    bottom: "ip2_time"
+    bottom: "times"
+    top: "accuracy_time"
+    include {
+        phase: TEST
+    }
+}
+layer {
+    name: "accuracy_duration"
+    type: "Accuracy"
+    bottom: "ip2_duration"
+    bottom: "durations"
+    top: "accuracy_duration"
+    include {
+        phase: TEST
+    }
+}
+layer {
+    name: "accuracy_velocity"
+    type: "Accuracy"
+    bottom: "ip2_velocity"
+    bottom: "velocities"
+    top: "accuracy_velocity"
+    include {
+        phase: TEST
+    }
+}

@@ -5,24 +5,28 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'train';
-var genStart = 300;
-var genEnd = 301;
+var trainTest = 'test';
+var genStart = 5;
+var genEnd = 6;
 var genIter = 1;
+var idxOffset = 0 - genStart;
+var makeImages = true;
 //var vScale = 1;
 var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
 //var cols = Math.ceil((Math.max(lastT, indicatorT) - firstT + padL + padR) * minResScale);
-var cols = 128;
+var cols = 1024;
 
 var fileIn = process.argv[2];
 var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
 var noteFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.notes.py');
 var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
 var durationFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.durations.py');
-fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/images\'   , envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/notes\'    , envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/times\'    , envSize)\ntr=env.begin(None,None,True)\n');
+var velocityFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.velocities.py');
+fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/images\', envSize)\ntr=env.begin(None,None,True)\n');
+fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/notes\', envSize)\ntr=env.begin(None,None,True)\n');
+fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/times\', envSize)\ntr=env.begin(None,None,True)\n');
 fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/durations\', envSize)\ntr=env.begin(None,None,True)\n');
+fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\n');
 
 var silhouetteLimit1 = 0.8;
 var silhouetteLimit2 = 0.4;
@@ -359,11 +363,10 @@ fs.readFile(fileIn, function(err, data) {
             var shift = 0;
         } else {
             var padL = 0, padR = 0;
-            var shift = Math.random() * cols / minResScale - indicatorT;
-            console.log(shift);
+            var shift = firstT - indicatorT + (Math.random() * 0.6 + 0.2) * cols / minResScale;
         }
-        var padB = 0;//Math.floor(Math.random() * 24); // units of MIDI notes
-        var padT = 0;//Math.floor(Math.random() * 24);
+        //var padB = Math.floor(Math.random() * 24); // units of MIDI notes
+        //var padT = Math.floor(Math.random() * 24);
 
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
@@ -410,6 +413,7 @@ fs.readFile(fileIn, function(err, data) {
             note: trainNote.n,// - lowN + padB,
             time: trainNote.t - indicatorT,
             duration: trainNote.d,
+            velocity: trainNote.v,
             rows: rows,
             cols: cols,
             bpp: bpp,
@@ -451,16 +455,17 @@ fs.readFile(fileIn, function(err, data) {
                     imageProto += '\\x' + Number(trainPoint.image[i]).toString(16); // google protobuf escaped hex
                 }
 
-                var noteProto = '';
-                for (var i = 0; i < 128; i++) {
-                    noteProto += trainPoint.note === i ? '\\x01' : '\\x00';
-                }
+                //var noteProto = '';
+                //for (var i = 0; i < 128; i++) {
+                //    noteProto += trainPoint.note === i ? '\\x01' : '\\x00';
+                //}
 
                 var prototxt = [];
                 prototxt.push('channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "' + imageProto + '"');
-                prototxt.push('channels: 128\nheight: 1\nwidth: 1\ndata: "' + noteProto + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.note) + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.time) + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.duration) + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.velocity) + '"');
 
                 //console.log('tni', self.tni, 'note', trainPoint.note, 'time', trainPoint.time, 'duration', trainPoint.duration);
 
@@ -503,7 +508,7 @@ fs.readFile(fileIn, function(err, data) {
                     writable: true, configurable: true, value: [],
                 },
                 data: {
-                    writable: true, configurable: true, value: ['', '', '', ''],
+                    writable: true, configurable: true, value: ['', '', '', '', ''],
                 },
             });
             this.max = max;
@@ -516,24 +521,26 @@ fs.readFile(fileIn, function(err, data) {
             if (self.task.tni < self.max) {
                 self.task.spawn().then(function(data) {
                     new Promise(function(resolve, reject) {
-                        var idx = String(self.task.tni * self.iter + i);
+                        var idx = String(self.task.tni * self.iter + i + idxOffset);
                         var tasks = [
                             new Promise(function(resolve, reject) {
                                 fs.appendFile(imageFile,    'tr.put(\'' + idx + '\',\'' + data[0] + '\')\n', resolve);
                                 ////////////////////////
                                 // generate png image //
                                 ////////////////////////
-                                if (self.task.trainPoint.bpp === 3) {
-                                    var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'rgb');
-                                } else {
-                                    var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'gray', 8);
+                                if (makeImages) {
+                                    if (self.task.trainPoint.bpp === 3) {
+                                        var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'rgb');
+                                    } else {
+                                        var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'gray', 8);
+                                    }
+                                    (function() {
+                                        var fileName = path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.' + idx + '.png');
+                                        png.encode(function(image) {
+                                            fs.writeFileSync(fileName, image);
+                                        });
+                                    })();
                                 }
-                                (function() {
-                                    var fileName = path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.' + idx + '.png');
-                                    png.encode(function(image) {
-                                        fs.writeFileSync(fileName, image);
-                                    });
-                                })();
                                 ////////////////////////
                             }),
                             new Promise(function(resolve, reject) {
@@ -544,6 +551,9 @@ fs.readFile(fileIn, function(err, data) {
                             }),
                             new Promise(function(resolve, reject) {
                                 fs.appendFile(durationFile, 'tr.put(\'' + idx + '\',\'' + data[3] + '\')\n', resolve);
+                            }),
+                            new Promise(function(resolve, reject) {
+                                fs.appendFile(velocityFile, 'tr.put(\'' + idx + '\',\'' + data[4] + '\')\n', resolve);
                             }),
                         ];
                         Promise.all(tasks).then(resolve);
@@ -561,10 +571,11 @@ fs.readFile(fileIn, function(err, data) {
                 fs.appendFile(noteFile,     'tr.commit()');
                 fs.appendFile(timeFile,     'tr.commit()');
                 fs.appendFile(durationFile, 'tr.commit()');
+                fs.appendFile(velocityFile, 'tr.commit()');
             }
         },
     }
 
     //scheduler.make(2, track.notes.length, 1).go();
-    scheduler.make(genStart, genEnd, genIter).go();
+    scheduler.make(genStart, genEnd === null ? track.notes.length - 1 : genEnd, genIter).go();
 });
