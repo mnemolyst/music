@@ -5,16 +5,16 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'test';
-var genStart = 5;
-var genEnd = 6;
+var trainTest = 'train';
+var genStart = 200;
+var genEnd = 500;
 var genIter = 1;
-var idxOffset = 0 - genStart;
+var idxOffset = genStart;
 var makeImages = true;
 //var vScale = 1;
 var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
 //var cols = Math.ceil((Math.max(lastT, indicatorT) - firstT + padL + padR) * minResScale);
-var cols = 1024;
+var cols = 512;
 
 var fileIn = process.argv[2];
 var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
@@ -102,6 +102,7 @@ fs.readFile(fileIn, function(err, data) {
     //var oneMeasure = ticksPerBeat * tsNum / tsDen; // one measure's worth of ticks
     var secondsPerTick = tempo / ticksPerBeat;
     var minResScale = secondsPerTick * 16; // horiz scale to make 1/16 sec (1/64 note at 120 bpm) occupy 1 pixel
+    var timeWidth = cols / minResScale;
     var track = tracks[1];
 
     function dist(a, b) {
@@ -309,10 +310,12 @@ fs.readFile(fileIn, function(err, data) {
         }
 
         // build training set
+        // trainType 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
         var trainNotes = [];
-        var trainStart = Math.random() * (trainNote.t - 4 * ticksPerBeat);
+        var indicatorCol = (Math.random() * 0.8 + 0.1) * timeWidth;
+        var trainStart = Math.random() * (trainNote.t - 16 * ticksPerBeat);
+        var trainGapEnd = trainNote.t + (Math.random() * 15 + 1) * ticksPerBeat;
         var trainStop = trainNote.t + trainNote.d + 4 * ticksPerBeat + (Math.random() * (track.lastNoteEnd - trainNote.t - trainNote.d - 4 * ticksPerBeat));
-        var trainGapEnd = trainNote.t + Math.random() * (trainStop - trainNote.t);
         var trainMelody = null;
         for (var i = 0; i < c.length; i++) {
             if (c[i].indexOf(tni) !== -1) {
@@ -356,14 +359,14 @@ fs.readFile(fileIn, function(err, data) {
         var bpp = 1; // bytes per pixel
         //var padL = Math.floor(Math.random() * 16 * ticksPerBeat);
         //var padR = Math.floor(Math.random() * 16 * ticksPerBeat);
-        var extraT = Math.round(cols / minResScale - (Math.max(lastT, indicatorT) - firstT));
+        var extraT = Math.round(timeWidth - (Math.max(lastT, indicatorT) - firstT));
         if (extraT > 0) {
             var padL = Math.round(extraT * Math.random());
             var padR = extraT - padL;
             var shift = 0;
         } else {
             var padL = 0, padR = 0;
-            var shift = firstT - indicatorT + (Math.random() * 0.6 + 0.2) * cols / minResScale;
+            var shift = firstT - indicatorT + (Math.random() * 0.6 + 0.2) * timeWidth;
         }
         //var padB = Math.floor(Math.random() * 24); // units of MIDI notes
         //var padT = Math.floor(Math.random() * 24);
@@ -521,7 +524,7 @@ fs.readFile(fileIn, function(err, data) {
             if (self.task.tni < self.max) {
                 self.task.spawn().then(function(data) {
                     new Promise(function(resolve, reject) {
-                        var idx = String(self.task.tni * self.iter + i + idxOffset);
+                        var idx = String(self.task.tni * self.iter + i - idxOffset);
                         var tasks = [
                             new Promise(function(resolve, reject) {
                                 fs.appendFile(imageFile,    'tr.put(\'' + idx + '\',\'' + data[0] + '\')\n', resolve);
