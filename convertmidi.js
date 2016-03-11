@@ -5,16 +5,17 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'train';
+var trainTest = 'test';
 var genStart = 5;
 var genEnd = null;
-var genIter = 1;
-var idxOffset = genStart;
-var makeImages = true;
+var genIter = 5;
+var makeImages = false;
+var makeMongo = false;
+var bpp = 1; // bytes per pixel
 //var vScale = 1;
 var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
 var cols = 512;
-var bpp = 1; // bytes per pixel
+var idxOffset = genStart;
 
 var fileIn = process.argv[2];
 var melodyFile =   path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.melodies');
@@ -24,11 +25,11 @@ var noteFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.
 var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
 var durationFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.durations.py');
 var velocityFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.velocities.py');
-fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/images\', envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/notes\', envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/times\', envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/durations\', envSize)\ntr=env.begin(None,None,True)\n');
-fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\n');
+fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/images\',     envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
+fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/notes\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
+fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/times\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
+fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
+fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize = 1024 * 1024 * 1024 * 1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
 
 var silhouetteLimit1 = 0.8;
 var silhouetteLimit2 = 0.4;
@@ -325,7 +326,8 @@ fs.readFile(fileIn, function(err, data) {
         }
 
         // build training set
-        // trainType 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+        // trainType 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after
+        // 4: all notes before and after except some same-melody
         var trainNotes = [];
         if (trainType === 0 || trainType === 2) {
             var trainNoteColT = (Math.random() * 0.4 + 0.5) * timeWidth;
@@ -369,30 +371,18 @@ fs.readFile(fileIn, function(err, data) {
             }
         }
         var indicatorT = track.notes[lastBeforeTrainNote].t + Math.round(Math.random() * 2 * (trainNote.t - track.notes[lastBeforeTrainNote].t));
+        var padL = trainStart - (trainNote.t - trainNoteColT);
 
         ////////////////
         // draw image //
         ////////////////
-        //var padL = Math.floor(Math.random() * 16 * ticksPerBeat);
-        var extraT = Math.round(timeWidth - (Math.max(lastT, indicatorT) - firstT));
-        if (extraT > 0) {
-            var padL = Math.round(extraT * Math.random());
-            var shift = 0;
-        } else {
-            var padL = 0;
-            var shift = firstT - indicatorT + (Math.random() * 0.6 + 0.2) * timeWidth;
-        }
-        //var padB = Math.floor(Math.random() * 24); // units of MIDI notes
-        //var padT = Math.floor(Math.random() * 24);
-        padL = trainStart - (trainNote.t - trainNoteColT);
-        shift = 0;
 
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
         for (var i = 0; i < trainNotes.length; i++) {
             var note = track.notes[trainNotes[i]];
-            var lc = Math.round((note.t - firstT + padL + shift) * minResScale);
-            var uc = Math.round((note.t + note.d - firstT + padL + shift) * minResScale);
+            var lc = Math.round((note.t - firstT + padL) * minResScale);
+            var uc = Math.round((note.t + note.d - firstT + padL) * minResScale);
             lc = Math.max(0, Math.min(lc, cols));
             uc = Math.max(0, Math.min(uc, cols));
             for (var j = lc; j < uc; j++) {
@@ -422,7 +412,7 @@ fs.readFile(fileIn, function(err, data) {
         // training note indicator line
         for (var i = 0; i < rows; i++) {
             for (var k = 0; k < bpp; k++) {
-                var idx = Math.round(i * cols + (indicatorT - firstT + padL + shift) * minResScale) * bpp + k;
+                var idx = Math.round(i * cols + (indicatorT - firstT + padL) * minResScale) * bpp + k;
                 imageBuf[idx] = 255;
             }
         }
@@ -520,10 +510,10 @@ fs.readFile(fileIn, function(err, data) {
             if (self.task.tni < self.max) {
                 self.task.spawn().then(function(data) {
                     new Promise(function(resolve, reject) {
-                        var idx = String(self.task.tni * self.iter + i - idxOffset);
+                        var idx = String((self.task.tni - idxOffset) * self.iter + i);
                         var tasks = [
                             new Promise(function(resolve, reject) {
-                                fs.appendFile(imageFile,    'tr.put(\'' + idx + '\',\'' + data[0] + '\')\n', resolve);
+                                fs.appendFile(imageFile,    'tr.put(str(pre + ' + idx + '),\'' + data[0] + '\')\n', resolve);
                                 ////////////////////////
                                 // generate png image //
                                 ////////////////////////
@@ -543,16 +533,16 @@ fs.readFile(fileIn, function(err, data) {
                                 ////////////////////////
                             }),
                             new Promise(function(resolve, reject) {
-                                fs.appendFile(noteFile,     'tr.put(\'' + idx + '\',\'' + data[1] + '\')\n', resolve);
+                                fs.appendFile(noteFile,     'tr.put(str(pre + ' + idx + '),\'' + data[1] + '\')\n', resolve);
                             }),
                             new Promise(function(resolve, reject) {
-                                fs.appendFile(timeFile,     'tr.put(\'' + idx + '\',\'' + data[2] + '\')\n', resolve);
+                                fs.appendFile(timeFile,     'tr.put(str(pre + ' + idx + '),\'' + data[2] + '\')\n', resolve);
                             }),
                             new Promise(function(resolve, reject) {
-                                fs.appendFile(durationFile, 'tr.put(\'' + idx + '\',\'' + data[3] + '\')\n', resolve);
+                                fs.appendFile(durationFile, 'tr.put(str(pre + ' + idx + '),\'' + data[3] + '\')\n', resolve);
                             }),
                             new Promise(function(resolve, reject) {
-                                fs.appendFile(velocityFile, 'tr.put(\'' + idx + '\',\'' + data[4] + '\')\n', resolve);
+                                fs.appendFile(velocityFile, 'tr.put(str(pre + ' + idx + '),\'' + data[4] + '\')\n', resolve);
                             }),
                         ];
                         Promise.all(tasks).then(resolve);
@@ -577,16 +567,18 @@ fs.readFile(fileIn, function(err, data) {
 
     scheduler.make(genStart, genEnd === null ? track.notes.length - 1 : genEnd, genIter).go();
 
-    //var dbIn = {
-    //    name: path.basename(fileIn, '.mid'),
-    //    notes: track.notes.map(function(el) { el.n -= 69; el.t *= minResScale * 0.25; el.d *= minResScale * 0.25; return el }),
-    //    staff: {
-    //        noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-    //        keySig: [0, 0, 0, 0, 0, 0, 0],
-    //        timeDiv: timeDiv,
-    //    },
-    //    ticksPerBeat: midifile.header.ticksPerBeat,
-    //    tempo: tempo,
-    //};
-    //fs.writeFileSync(dbFile, JSON.stringify(dbIn));
+    if (makeMongo) {
+        var dbIn = {
+            name: path.basename(fileIn, '.mid'),
+            notes: track.notes.map(function(el) { el.n -= 69; el.t *= minResScale * 0.25; el.d *= minResScale * 0.25; return el }),
+            staff: {
+                noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
+                keySig: [0, 0, 0, 0, 0, 0, 0],
+                timeDiv: timeDiv,
+            },
+            ticksPerBeat: midifile.header.ticksPerBeat,
+            tempo: tempo,
+        };
+        fs.writeFileSync(dbFile, JSON.stringify(dbIn));
+    }
 });

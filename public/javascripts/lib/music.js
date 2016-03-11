@@ -573,8 +573,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
 
         tool.onMouseUp = function(event) {
+            var count = 0;
             for (var i = 0; i < composition.notes.length; i++) {
                 if (composition.notes[i].path.isInside(dragBox.bounds)) {
+                    count++;
                     if (melodyColors.hasOwnProperty(currentMelody)) {
                         composition.notes[i].melody = currentMelody;
                     } else {
@@ -584,6 +586,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             }
             dragBox.remove();
             composition.refresh();
+            console.log('selected', count);
         }
 
         window.onresize = function() {
