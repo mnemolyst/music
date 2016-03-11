@@ -47,6 +47,16 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         '1': '\u266f', // sharp
     };
 
+    var melodyColors = {
+        1: 'red',
+        2: 'blue',
+        3: 'green',
+        4: 'yellow'
+    };
+    var currentMelody = 1;
+    var dragBox = null;
+    var dragStart = new Point();
+
     ///////////
     // Staff //
     ///////////
@@ -187,15 +197,16 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     //////////
     // Note //
     //////////
-    var Note = function(t, d, note, staff) {
+    var Note = function(t, d, note, melody, staff) {
         this.t = t; // start time
         this.d = d; // duration
         this.note = note;
+        this.melody = melody;
 
         var noteInfo = staff.noteInfo(this.note);
         var startPoint = staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
         this.path = new Path({
-            strokeColor: 'blue',
+            strokeColor: '#999999',
             strokeWidth: 5,
             segments: [
                 startPoint,
@@ -203,7 +214,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             ],
         });
         this.text = new PointText({
-            strokeColor: 'black',
+            strokeColor: '#999999',
             fontSize: 14,
             content: sfSigns[noteInfo.sf],
             point: this.path.lastSegment.point.clone(),
@@ -218,6 +229,13 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.group.position = staff.hPaths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), noteInfo.y]);
         this.text.setContent(sfSigns[noteInfo.sf]);
         this.path.lastSegment.point.x = this.path.firstSegment.point.x + staff.timeSpacing * this.d;
+        if (this.melody === null) {
+            this.path.strokeColor = 'violet';
+        } else if (melodyColors.hasOwnProperty(this.melody)) {
+            this.path.strokeColor = melodyColors[this.melody];
+        } else {
+            this.path.strokeColor = '#999999';
+        }
         this.text.point = this.path.lastSegment.point.clone();
     }
     Note.prototype.remove = function() {
@@ -263,6 +281,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 t: this.notes[i].t,
                 d: this.notes[i].d,
                 n: this.notes[i].note,
+                m: this.notes[i].melody,
             });
         }
         return JSON.stringify(data);
@@ -360,7 +379,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         composition = new Composition(data.name, staff, id);
                         var notes = [];
                         for (var i = 0; i < data['notes'].length; i++) {
-                            var note = new Note(data['notes'][i].t, data['notes'][i].d, data['notes'][i].n, staff);
+                            var note = new Note(data['notes'][i].t, data['notes'][i].d, data['notes'][i].n, data['notes'][i].m, staff);
                             notes.push(note);
                         }
                         composition.notes = notes;
@@ -482,11 +501,14 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.t = Math.floor(leftTime + staff.hPaths.bounds.width / staff.timeSpacing);
                     cursor.refresh();
                     break;
-                case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
-                    if (! $nameInput.dialog('isOpen')) {
-                        var note = new Note(cursor.t, Number(event.key), cursor.note, staff);
-                        composition.notes.push(note);
-                    }
+                //case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
+                //    if (! $nameInput.dialog('isOpen')) {
+                //        var note = new Note(cursor.t, Number(event.key), cursor.note, 0, staff);
+                //        composition.notes.push(note);
+                //    }
+                //    break;
+                case '1': case '2': case'3': case '4': case '5':
+                    currentMelody = Number(event.key);
                     break;
                 case '-':
                     var idx = composition.notes.findIndex(function(el) {
@@ -524,7 +546,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         var oldNoteD3 = oldNote.d / 3;
                         var newNotes = [];
                         for (var i = 0; i < 3; i++) {
-                            var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, staff);
+                            var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, oldNode.melody, staff);
                             newNotes.push(newNote);
                         }
                         composition.notes[idx].remove();
@@ -533,7 +555,36 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     break;
             }
             //console.log(event.key);
-        };
+        }
+
+        tool.onMouseDown = function(event) {
+            dragStart = event.point;
+            dragBox = new Path({
+                strokeColor: 'red',
+            });
+        }
+
+        tool.onMouseDrag = function(event) {
+            var left = dragStart.x < event.point.x ? dragStart.x : event.point.x;
+            var right = dragStart.x < event.point.x ? event.point.x : dragStart.x;
+            var top = dragStart.y < event.point.y ? dragStart.y : event.point.y;
+            var bottom = dragStart.y < event.point.y ? event.point.y : dragStart.y;
+            dragBox.segments = [[left, top], [right, top], [right, bottom], [left, bottom], [left, top]];
+        }
+
+        tool.onMouseUp = function(event) {
+            for (var i = 0; i < composition.notes.length; i++) {
+                if (composition.notes[i].path.isInside(dragBox.bounds)) {
+                    if (melodyColors.hasOwnProperty(currentMelody)) {
+                        composition.notes[i].melody = currentMelody;
+                    } else {
+                        delete composition.notes[i].melody;
+                    }
+                }
+            }
+            dragBox.remove();
+            composition.refresh();
+        }
 
         window.onresize = function() {
             view.viewSize = [window.innerWidth, window.innerHeight];
@@ -547,6 +598,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
             progressBar.position = submitLink.bounds.rightCenter.add([5, 0]);
             playLink.point = submitLink.bounds.topLeft.add([0, -5]);
+            melodyLink.point = playLink.bounds.topLeft.add([0, -5]);
         }
 
         var sigLinks = new Group();
@@ -721,6 +773,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         idx: i,
                     });
                     thisSrcIdx = sources.length - 1;
+                    console.log('new src', sources.length);
                 }
                 sources[thisSrcIdx].idx = i;
                 var startTime = composition.notes[i].t * composition.tempo * 0.000001;
@@ -737,6 +790,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             }
 
             offlineCtx.startRendering().then(function(renderedBuffer) {
+                console.log('rendered');
                 var audioCtx = new AudioContext();
                 var song = audioCtx.createBufferSource();
                 song.buffer = renderedBuffer;
@@ -744,8 +798,35 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 song.onended = function() {
                     audioCtx.close();
                 }
+                console.log('starting playback');
                 song.start();
             });
+        }
+
+        var melodyLink = new PointText({
+            strokeColor: 'black',
+            fontSize: 20,
+            content: 'Melodies',
+        });
+        melodyLink.onClick = function() {
+            var c = [];
+            var total = 0;
+            for (var i = 0; i < composition.notes.length; i++) {
+                var melody = composition.notes[i].melody;
+                if (melody) {
+                    if (! c.hasOwnProperty(melody-1)) {
+                        c[melody-1] = [];
+                    }
+
+                    c[melody-1].push(i);
+                    total++;
+                } else {
+                    composition.notes[i].melody = null;
+                    console.log('nope', i);
+                }
+            }
+            composition.refresh();
+            console.log(JSON.stringify(c), total);
         }
 
         $(window).trigger('resize');

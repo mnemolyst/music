@@ -6,17 +6,19 @@ var path = require('path');
 var Promise = require('bluebird');
 
 var trainTest = 'train';
-var genStart = 200;
-var genEnd = 500;
+var genStart = 5;
+var genEnd = null;
 var genIter = 1;
 var idxOffset = genStart;
 var makeImages = true;
 //var vScale = 1;
 var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
-//var cols = Math.ceil((Math.max(lastT, indicatorT) - firstT + padL + padR) * minResScale);
 var cols = 512;
+var bpp = 1; // bytes per pixel
 
 var fileIn = process.argv[2];
+var melodyFile =   path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.melodies');
+var dbFile =       path.join(__dirname, '/db/', path.basename(fileIn, '.mid') + '.db');
 var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
 var noteFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.notes.py');
 var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
@@ -38,6 +40,13 @@ var colors = [
     [0, 0xff, 0],
     [0xff, 0, 0xff],
 ];
+var melodies;
+
+var stats = fs.statSync(melodyFile);
+if (stats.isFile()) {
+    var read = fs.readFileSync(melodyFile);
+    melodies = JSON.parse(read);
+}
 
 fs.readFile(fileIn, function(err, data) {
     var timeDiv = 4;
@@ -227,95 +236,105 @@ fs.readFile(fileIn, function(err, data) {
     function generateTrainingPoint(tni) {
         var trainNote = track.notes[tni];
 
-        // TODO find best K / best s
-        var testNotes = [], maxK = 2;
-        for (var i = Math.max(0, tni - 3 * maxK); i < Math.min(track.notes.length, tni + 3 * maxK); i++) {
-            testNotes.push(i);
-        }
-        //do {
-            var tries = 1, c, s;
-            do {
-                c = kMed(testNotes, maxK);
-            } while ((s = minSilhouette(c)) < silhouetteLimit1 && tries++ < 10);
-        //} while (s >= silhouetteLimit1 && maxK++ <= 4);
-
-        if (s < silhouetteLimit1) {
-            var trainType = 0;
-        } else {
+        if (melodies) {
+            var c = melodies;
             var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
-        }
-
-        if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
-            c = [ [] ];
-            for (var i = 0; i < track.notes.length; c[0].push(i++));
         } else {
-            var c2, stepSize = 5;
-            do { // backward
-                testNotes = [], tries = 1;
-                var firstC = Math.min(c[0][0], c[1][0]);
-                var secondC = Math.max(c[0][0], c[1][0]);
-                notes: for (var i = Math.max(0, firstC - stepSize * maxK); i < secondC; i++) {
-                    for (var j = 0; j < c.length; j++) {
-                        if (c[j].indexOf(i) !== -1) {
-                            continue notes;
+            // TODO find best K / best s
+            var testNotes = [], maxK = 2;
+            for (var i = Math.max(0, tni - 3 * maxK); i < Math.min(track.notes.length, tni + 3 * maxK); i++) {
+                testNotes.push(i);
+            }
+            //do {
+                var tries = 1, c, s;
+                do {
+                    c = kMed(testNotes, maxK);
+                } while ((s = minSilhouette(c)) < silhouetteLimit1 && tries++ < 10);
+            //} while (s >= silhouetteLimit1 && maxK++ <= 4);
+
+            if (s < silhouetteLimit1) {
+                var trainType = 0;
+            } else {
+                var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            }
+            //trainType = 4;
+
+            if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
+                c = [ [] ];
+                for (var i = 0; i < track.notes.length; c[0].push(i++));
+            } else {
+                var c2, stepSize = 5;
+                do { // backward
+                    testNotes = [], tries = 1;
+                    var firstC = Math.min(c[0][0], c[1][0]);
+                    var secondC = Math.max(c[0][0], c[1][0]);
+                    notes: for (var i = Math.max(0, firstC - stepSize * maxK); i < secondC; i++) {
+                        for (var j = 0; j < c.length; j++) {
+                            if (c[j].indexOf(i) !== -1) {
+                                continue notes;
+                            }
                         }
+                        testNotes.push(i);
                     }
-                    testNotes.push(i);
-                }
-                if (testNotes.length === 0) {
-                    break;
-                }
-                c2 = cluster(testNotes, [c[0][0], c[1][0]]);
-                s = minSilhouette(c2);
-                if (s >= silhouetteLimit2) {
-                    stepSize++;
-                    for (var i = 0; i < c2.length; i++) {
-                        for (var j = c2[i].length - 1; j >= 0; j--) {
-                            if (c[i].indexOf(c2[i][j]) === -1) {
-                                c[i].unshift(c2[i][j]);
+                    if (testNotes.length === 0) {
+                        break;
+                    }
+                    c2 = cluster(testNotes, [c[0][0], c[1][0]]);
+                    s = minSilhouette(c2);
+                    if (s >= silhouetteLimit2) {
+                        stepSize++;
+                        for (var i = 0; i < c2.length; i++) {
+                            for (var j = c2[i].length - 1; j >= 0; j--) {
+                                if (c[i].indexOf(c2[i][j]) === -1) {
+                                    c[i].unshift(c2[i][j]);
+                                }
                             }
                         }
                     }
-                }
-            } while ((s >= silhouetteLimit2 || --stepSize > 1) && firstC >= 0);
-            stepSize = 5;
-            do { // and forward
-                testNotes = [], tries = 1;
-                var lastC = Math.max(c[0][c[0].length-1], c[1][c[1].length-1]);
-                var secondC = Math.min(c[0][c[0].length-1], c[1][c[1].length-1]);
-                notes: for (var i = secondC; i < Math.min(lastC + stepSize * maxK, track.notes.length); i++) {
-                    for (var j = 0; j < c.length; j++) {
-                        if (c[j].indexOf(i) !== -1) {
-                            continue notes;
+                } while ((s >= silhouetteLimit2 || --stepSize > 1) && firstC >= 0);
+                stepSize = 5;
+                do { // and forward
+                    testNotes = [], tries = 1;
+                    var lastC = Math.max(c[0][c[0].length-1], c[1][c[1].length-1]);
+                    var secondC = Math.min(c[0][c[0].length-1], c[1][c[1].length-1]);
+                    notes: for (var i = secondC; i < Math.min(lastC + stepSize * maxK, track.notes.length); i++) {
+                        for (var j = 0; j < c.length; j++) {
+                            if (c[j].indexOf(i) !== -1) {
+                                continue notes;
+                            }
                         }
+                        testNotes.push(i);
                     }
-                    testNotes.push(i);
-                }
-                if (testNotes.length === 0) {
-                    break;
-                }
-                c2 = cluster(testNotes, [c[0][c[0].length-1], c[1][c[1].length-1]]);
-                s = minSilhouette(c2);
-                if (s >= silhouetteLimit2) {
-                    stepSize++;
-                    for (var i = 0; i < c2.length; i++) {
-                        for (var j = c2[i].length - 1; j >= 0; j--) {
-                            if (c[i].indexOf(c2[i][j]) === -1) {
-                                c[i].push(c2[i][j]);
+                    if (testNotes.length === 0) {
+                        break;
+                    }
+                    c2 = cluster(testNotes, [c[0][c[0].length-1], c[1][c[1].length-1]]);
+                    s = minSilhouette(c2);
+                    if (s >= silhouetteLimit2) {
+                        stepSize++;
+                        for (var i = 0; i < c2.length; i++) {
+                            for (var j = c2[i].length - 1; j >= 0; j--) {
+                                if (c[i].indexOf(c2[i][j]) === -1) {
+                                    c[i].push(c2[i][j]);
+                                }
                             }
                         }
                     }
-                }
-            } while ((s >= silhouetteLimit2 || --stepSize > 1) && lastC < track.notes.length);
+                } while ((s >= silhouetteLimit2 || --stepSize > 1) && lastC < track.notes.length);
+            }
         }
 
         // build training set
         // trainType 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
         var trainNotes = [];
-        var indicatorCol = (Math.random() * 0.8 + 0.1) * timeWidth;
-        var trainStart = Math.random() * (trainNote.t - 16 * ticksPerBeat);
-        var trainGapEnd = trainNote.t + (Math.random() * 15 + 1) * ticksPerBeat;
-        var trainStop = trainNote.t + trainNote.d + 4 * ticksPerBeat + (Math.random() * (track.lastNoteEnd - trainNote.t - trainNote.d - 4 * ticksPerBeat));
+        if (trainType === 0 || trainType === 2) {
+            var trainNoteColT = (Math.random() * 0.4 + 0.5) * timeWidth;
+        } else {
+            var trainNoteColT = (Math.random() * 0.8 + 0.1) * timeWidth;
+        }
+        var trainStart = trainNote.t - (Math.random() * 0.9 + 0.1) * trainNoteColT;
+        var trainGapEnd = trainNote.t + (Math.random() * 0.8 + 0.2) * (timeWidth - trainNoteColT) * 0.5;
+        var trainStop = trainGapEnd + (Math.random() * 0.8 + 0.2) * (timeWidth - trainNoteColT) * 0.5;
         var trainMelody = null;
         for (var i = 0; i < c.length; i++) {
             if (c[i].indexOf(tni) !== -1) {
@@ -349,27 +368,24 @@ fs.readFile(fileIn, function(err, data) {
                 }
             }
         }
-        var indicatorOffset = Math.round(Math.random() * (trainNote.t - track.notes[lastBeforeTrainNote].t + ticksPerBeat));
-        //var indicatorOffset = Math.round(0 *             (trainNote.t - track.notes[lastBeforeTrainNote].t + 4 * ticksPerBeat));
-        var indicatorT = track.notes[lastBeforeTrainNote].t + indicatorOffset;
+        var indicatorT = track.notes[lastBeforeTrainNote].t + Math.round(Math.random() * 2 * (trainNote.t - track.notes[lastBeforeTrainNote].t));
 
         ////////////////
         // draw image //
         ////////////////
-        var bpp = 1; // bytes per pixel
         //var padL = Math.floor(Math.random() * 16 * ticksPerBeat);
-        //var padR = Math.floor(Math.random() * 16 * ticksPerBeat);
         var extraT = Math.round(timeWidth - (Math.max(lastT, indicatorT) - firstT));
         if (extraT > 0) {
             var padL = Math.round(extraT * Math.random());
-            var padR = extraT - padL;
             var shift = 0;
         } else {
-            var padL = 0, padR = 0;
+            var padL = 0;
             var shift = firstT - indicatorT + (Math.random() * 0.6 + 0.2) * timeWidth;
         }
         //var padB = Math.floor(Math.random() * 24); // units of MIDI notes
         //var padT = Math.floor(Math.random() * 24);
+        padL = trainStart - (trainNote.t - trainNoteColT);
+        shift = 0;
 
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
@@ -423,26 +439,6 @@ fs.readFile(fileIn, function(err, data) {
         };
     }
 
-    //var dbIn = {
-    //    name: track.name,
-    //    notes: track.notes,
-    //    staff: {
-    //        noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-    //        keySig: [0, 0, 0, 0, 0, 0, 0],
-    //        timeDiv: timeDiv,
-    //    },
-    //    ticksPerBeat: midifile.header.ticksPerBeat,
-    //    tempo: tempo,
-    //};
-    //fs.writeFileSync('testdb', JSON.stringify(dbIn));
-    //var childProcesses = [];
-    var imageChildren = [];
-    var noteChildren = [];
-    var timeChildren = [];
-    var durationChildren = [];
-    var childLimit = 4;
-    var protocCount = 0;
-    var n = 0;
     var childProto = {
         exe: '/usr/local/bin/protoc',
         args: ['--encode=caffe.Datum', 'caffe.proto'],
@@ -538,7 +534,7 @@ fs.readFile(fileIn, function(err, data) {
                                         var png = new Png(self.task.trainPoint.image, self.task.trainPoint.cols, self.task.trainPoint.rows, 'gray', 8);
                                     }
                                     (function() {
-                                        var fileName = path.join(__dirname, '/midi/', path.basename(fileIn, '.mid') + '.' + idx + '.png');
+                                        var fileName = path.join(__dirname, '/images/', path.basename(fileIn, '.mid') + '.' + idx + '.png');
                                         png.encode(function(image) {
                                             fs.writeFileSync(fileName, image);
                                         });
@@ -579,6 +575,18 @@ fs.readFile(fileIn, function(err, data) {
         },
     }
 
-    //scheduler.make(2, track.notes.length, 1).go();
     scheduler.make(genStart, genEnd === null ? track.notes.length - 1 : genEnd, genIter).go();
+
+    //var dbIn = {
+    //    name: path.basename(fileIn, '.mid'),
+    //    notes: track.notes.map(function(el) { el.n -= 69; el.t *= minResScale * 0.25; el.d *= minResScale * 0.25; return el }),
+    //    staff: {
+    //        noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
+    //        keySig: [0, 0, 0, 0, 0, 0, 0],
+    //        timeDiv: timeDiv,
+    //    },
+    //    ticksPerBeat: midifile.header.ticksPerBeat,
+    //    tempo: tempo,
+    //};
+    //fs.writeFileSync(dbFile, JSON.stringify(dbIn));
 });
