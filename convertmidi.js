@@ -5,11 +5,16 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
+var genStart = 200;
+var genEnd = 210;
+var genIter = 1;
+var makeImages = true;
+//var genStart = 5;
+//var genEnd = null;
+//var genIter = 5;
+//var makeImages = false;
+
 var trainTest = 'test';
-var genStart = 5;
-var genEnd = null;
-var genIter = 5;
-var makeImages = false;
 var makeMongo = false;
 var bpp = 1; // bytes per pixel
 //var vScale = 1;
@@ -349,7 +354,7 @@ fs.readFile(fileIn, function(err, data) {
         var lastT = trainNote.t + trainNote.d;
         //var lowN = 0;//trainNote.n;
         //var highN = 127;//trainNote.n;
-        var lastBeforeTrainNote = 0;
+        var lastInMelodyBefore = 0;
         for (var i = 0; i < track.notes.length; i++) {
             var note = track.notes[i];
             if (
@@ -365,13 +370,15 @@ fs.readFile(fileIn, function(err, data) {
                 lastT = lastT < note.t + note.d ? note.t + note.d : lastT;
                 //lowN = note.n < lowN ? note.n : lowN;
                 //highN = highN < note.n ? note.n : highN;
-                if (lastBeforeTrainNote < i && i < tni) {
-                    lastBeforeTrainNote = i;
+                if (lastInMelodyBefore < i && i < tni && c[trainMelody].indexOf(i) !== -1) {
+                    lastInMelodyBefore = i;
                 }
             }
         }
-        var indicatorT = track.notes[lastBeforeTrainNote].t + Math.round(Math.random() * 2 * (trainNote.t - track.notes[lastBeforeTrainNote].t));
-        var padL = trainStart - (trainNote.t - trainNoteColT);
+        var indicatorSixtyfourthsOffset = Math.floor(Math.random() * 64) - 32; // introduce randomness to indicator line for training generalization
+        indicatorSixtyfourthsOffset = Math.min(indicatorSixtyfourthsOffset, (trainGapEnd - trainNote.t) * 16 / ticksPerBeat);
+        var indicatorT = trainNote.t + indicatorSixtyfourthsOffset * ticksPerBeat / 16;
+        var padL = trainStart - (trainNote.t - trainNoteColT); // trainNote.t - trainNoteColT is the amount of time before the left edge of the image
 
         ////////////////
         // draw image //
@@ -393,7 +400,7 @@ fs.readFile(fileIn, function(err, data) {
                     if (bpp === 3) {
                         if (trainNotes[i] === tni) {
                             imageBuf[idx] = colors[0][k];
-                        } else if (trainNotes[i] === lastBeforeTrainNote) {
+                        } else if (trainNotes[i] === lastInMelodyBefore) {
                             imageBuf[idx] = colors[1][k];
                         } else {
                             for (var l = 0; l < c.length; l++) {
@@ -419,10 +426,10 @@ fs.readFile(fileIn, function(err, data) {
 
         return {
             image: imageBuf,
-            note: trainNote.n,// - lowN + padB,
-            time: trainNote.t - indicatorT,
-            duration: trainNote.d,
-            velocity: trainNote.v,
+            note: trainNote.n,
+            time: 0 - indicatorSixtyfourthsOffset,
+            duration: Math.min(Math.round(trainNote.d / ticksPerBeat * 16), 64),
+            velocity: Math.floor(trainNote.v / 8),
             rows: rows,
             cols: cols,
             bpp: bpp,
@@ -437,6 +444,7 @@ fs.readFile(fileIn, function(err, data) {
             var self = this;
             return new Promise(function(resolve, reject) {
                 var trainPoint = generateTrainingPoint(self.tni);
+                console.log(trainPoint);
                 self.trainPoint = trainPoint;
 
                 var imageProto = '';
