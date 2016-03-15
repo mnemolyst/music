@@ -349,6 +349,20 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var cursor = new Cursor(composition);
 
+        function splitCursor() {
+            var melodiesAtIndicator = {};
+            for (var i = 0; i < composition.notes.length; i++) {
+                var note = composition.notes[c[i][j]];
+                if (note.t - 5 < indicatorT && indicatorT < note.t + note.d + 5) {
+                    if (! melodiesAtIndicator.hasOwnProperty(note.melody)) {
+                        melodiesAtIndicator[note.melody] = {low: note.n, high: note.n};
+                    }
+                    melodiesAtIndicator[note.melody].low = melodiesAtIndicator[note.melody].low < note.n ? melodiesAtIndicator[note.melody].low : note.n;
+                    melodiesAtIndicator[note.melody].high = melodiesAtIndicator[note.melody].high < note.n ? note.n : melodiesAtIndicator[note.melody].high;
+                }
+            }
+        }
+
         $nameInput.dialog({
             autoOpen: false,
             buttons: {

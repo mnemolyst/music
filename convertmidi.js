@@ -5,18 +5,19 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var genStart = 200;
-var genEnd = 210;
-var genIter = 1;
-var makeImages = true;
-//var genStart = 5;
-//var genEnd = null;
-//var genIter = 5;
-//var makeImages = false;
-
 var trainTest = 'test';
+var genStart = 5;
+var genEnd = null;
+var genIter = 5;
+var makeImages = false;
+//var genStart = 200;
+//var genEnd = 210;
+//var genIter = 1;
+//var makeImages = true;
+
 var makeMongo = false;
 var bpp = 1; // bytes per pixel
+var excludeTrainNote = true;
 //var vScale = 1;
 var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
 var cols = 512;
@@ -48,10 +49,13 @@ var colors = [
 ];
 var melodies;
 
-var stats = fs.statSync(melodyFile);
-if (stats.isFile()) {
-    var read = fs.readFileSync(melodyFile);
-    melodies = JSON.parse(read);
+try {
+    var stats = fs.statSync(melodyFile);
+    if (stats.isFile()) {
+        var read = fs.readFileSync(melodyFile);
+        melodies = JSON.parse(read);
+    }
+} catch (err) {
 }
 
 fs.readFile(fileIn, function(err, data) {
@@ -244,7 +248,11 @@ fs.readFile(fileIn, function(err, data) {
 
         if (melodies) {
             var c = melodies;
-            var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            if (c.length === 1) {
+                var trainType = Math.floor(Math.random() * 2);
+            } else {
+                var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
+            }
         } else {
             // TODO find best K / best s
             var testNotes = [], maxK = 2;
@@ -263,7 +271,6 @@ fs.readFile(fileIn, function(err, data) {
             } else {
                 var trainType = Math.floor(Math.random() * 5); // 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after; 4: all notes before and after except some same-melody
             }
-            //trainType = 4;
 
             if (trainType === 0 || trainType === 1) { // if we are doing single-melody training
                 c = [ [] ];
@@ -362,7 +369,7 @@ fs.readFile(fileIn, function(err, data) {
                 && ! ((trainType === 0 || trainType === 2) && trainNote.t < note.t) // training type excludes notes after training note
                 && ! ((trainType === 2 || trainType === 3) && c[trainMelody].indexOf(i) === -1) // in wrong melody
                 && ! ((trainType === 1 || trainType === 3 || (trainType === 4 && c[trainMelody].indexOf(i) !== -1)) && trainNote.t < note.t && note.t < trainGapEnd) // inside gap range
-                && ! (tni === i) // and of course
+                && ! (excludeTrainNote && tni === i) // and of course
             ) {
                 trainNotes.push(i);
 
@@ -375,10 +382,31 @@ fs.readFile(fileIn, function(err, data) {
                 }
             }
         }
-        var indicatorSixtyfourthsOffset = Math.floor(Math.random() * 64) - 32; // introduce randomness to indicator line for training generalization
-        indicatorSixtyfourthsOffset = Math.min(indicatorSixtyfourthsOffset, (trainGapEnd - trainNote.t) * 16 / ticksPerBeat);
+        var indicatorSixtyfourthsOffset = Math.floor(Math.random() * 64) - 32; // introduce randomness in indicator line for training generalization
+        var minISFO = Math.ceil((track.notes[lastInMelodyBefore].t - trainNote.t) * 16 / ticksPerBeat);
+        var maxISFO = Math.floor((trainGapEnd - trainNote.t) * 0.5 * 16 / ticksPerBeat);
+        indicatorSixtyfourthsOffset = Math.max(minISFO, Math.min(indicatorSixtyfourthsOffset, maxISFO));
         var indicatorT = trainNote.t + indicatorSixtyfourthsOffset * ticksPerBeat / 16;
         var padL = trainStart - (trainNote.t - trainNoteColT); // trainNote.t - trainNoteColT is the amount of time before the left edge of the image
+
+        var lowestAbove = 128;
+        var highestBelow = 0;
+        for (var i = 0; i < trainNotes.length; i++) {
+            if (
+                track.notes[trainNotes[i]].t - ticksPerBeat < trainNote.t
+                && trainNote.t < track.notes[trainNotes[i]].t + track.notes[trainNotes[i]].d + ticksPerBeat
+                && c[trainMelody].indexOf(trainNotes[i]) === -1
+            ) {
+                if (track.notes[trainNotes[i]].n < lowestAbove && trainNote.n < track.notes[trainNotes[i]].n) {
+                    lowestAbove = track.notes[trainNotes[i]].n;
+                }
+                if (highestBelow < track.notes[trainNotes[i]].n && track.notes[trainNotes[i]].n < trainNote.n) {
+                    highestBelow = track.notes[trainNotes[i]].n;
+                }
+            }
+        }
+        var indicatorTop = 128 - Math.round((lowestAbove + trainNote.n) * 0.5);
+        var indicatorBottom = 128 - Math.round((highestBelow + trainNote.n) * 0.5);
 
         ////////////////
         // draw image //
@@ -417,7 +445,7 @@ fs.readFile(fileIn, function(err, data) {
             }
         }
         // training note indicator line
-        for (var i = 0; i < rows; i++) {
+        for (var i = indicatorTop; i < indicatorBottom; i++) {
             for (var k = 0; k < bpp; k++) {
                 var idx = Math.round(i * cols + (indicatorT - firstT + padL) * minResScale) * bpp + k;
                 imageBuf[idx] = 255;
@@ -427,7 +455,7 @@ fs.readFile(fileIn, function(err, data) {
         return {
             image: imageBuf,
             note: trainNote.n,
-            time: 0 - indicatorSixtyfourthsOffset,
+            time: indicatorSixtyfourthsOffset + 32,
             duration: Math.min(Math.round(trainNote.d / ticksPerBeat * 16), 64),
             velocity: Math.floor(trainNote.v / 8),
             rows: rows,
@@ -444,7 +472,6 @@ fs.readFile(fileIn, function(err, data) {
             var self = this;
             return new Promise(function(resolve, reject) {
                 var trainPoint = generateTrainingPoint(self.tni);
-                console.log(trainPoint);
                 self.trainPoint = trainPoint;
 
                 var imageProto = '';
@@ -463,8 +490,6 @@ fs.readFile(fileIn, function(err, data) {
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.time) + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.duration) + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.velocity) + '"');
-
-                //console.log('tni', self.tni, 'note', trainPoint.note, 'time', trainPoint.time, 'duration', trainPoint.duration);
 
                 for (var i = 0; i < prototxt.length; i++) {
                     self.children.push(new Promise(function(resolve, reject) {

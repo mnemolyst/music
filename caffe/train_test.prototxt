@@ -416,7 +416,6 @@ layer {
     bottom: "ip2_time"
     bottom: "times"
     top: "loss_time"
-    loss_weight: 0.5
 }
 layer {
     name: "loss_duration"
