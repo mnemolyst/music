@@ -59,6 +59,7 @@ try {
 }
 
 fs.readFile(fileIn, function(err, data) {
+    console.log(fileIn);
     var timeDiv = 4;
     var tsNum = null;
     var tsDen = null;
