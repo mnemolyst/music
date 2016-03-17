@@ -148,10 +148,10 @@ layer {
   }
   convolution_param {
     num_output: %{
-        type = log
-        min = 1
-        max = 2
-        step = 0.1
+        type = int
+        min = 5
+        max = 100
+        step = 3
     }%
     kernel_h: 3
     kernel_w: 6
