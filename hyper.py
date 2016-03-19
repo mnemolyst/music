@@ -26,20 +26,44 @@ paramTemplates = {
         'max': 250,
     },
     'conv1_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
     },
     'conv1_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'conv1_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
     },
     'conv1_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool1_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool1_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
     },
     'pool1_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool1_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
     },
     'conv2_num_output': {
         'type': 'int',
@@ -47,35 +71,104 @@ paramTemplates = {
         'max': 250,
     },
     'conv2_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
     },
     'conv2_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'conv2_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
     },
     'conv2_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool2_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool2_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
     },
     'pool2_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
     },
     'pool2_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
     },
     'conv_bias_constant': {
+        'type': 'real',
+        'min': 0,
+        'max': 1,
     },
     'ip_bias_constant': {
+        'type': 'real',
+        'min': 0,
+        'max': 1,
     },
     'ip1_note_num_output': {
+        'type': 'int',
+        'min': 10,
+        'max': 500,
     },
     'ip1_time_num_output': {
+        'type': 'int',
+        'min': 10,
+        'max': 500,
     },
     'ip1_duration_num_output': {
+        'type': 'int',
+        'min': 10,
+        'max': 500,
     },
     'ip1_velocity_num_output': {
+        'type': 'int',
+        'min': 10,
+        'max': 200,
     },
     'bias_lr_mult': {
-        #2
+        'type': 'real',
+        'min': 1,
+        'max': 3,
+    },
+    'base_lr': {
+        'type': 'log',
+        'min': 0.0001,
+        'max': 0.1,
+    },
+    'lr_momentum': {
+        'type': 'real',
+        'min': 0.7,
+        'max': 0.95,
+    },
+    'weight_decay': {
+        'type': 'log',
+        'min': 0.0001,
+        'max': 0.005,
+    },
+    'lr_gamma': {
+        'type': 'log',
+        'min': 0.00001,
+        'max': 0.001,
+    },
+    'lr_power': {
+        'type': 'real',
+        'min': 0.25,
+        'max': 0.95,
     },
 }
 
@@ -85,7 +178,7 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/train/images',
+            'source': 'music/lmdb/{{phase}}/images',
             'batch_size': '{{batch_size}}',
             'backend': P.Data.LMDB,
             'transform_param': {
@@ -98,7 +191,7 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/train/notes',
+            'source': 'music/lmdb/{{phase}}/notes',
             'batch_size': '{{batch_size}}',
             'backend': P.Data.LMDB,
         },
@@ -108,7 +201,7 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/train/times',
+            'source': 'music/lmdb/{{phase}}/times',
             'batch_size': '{{batch_size}}',
             'backend': P.Data.LMDB,
         },
@@ -118,7 +211,7 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/train/durations',
+            'source': 'music/lmdb/{{phase}}/durations',
             'batch_size': '{{batch_size}}',
             'backend': P.Data.LMDB,
         },
@@ -128,7 +221,7 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/train/velocities',
+            'source': 'music/lmdb/{{phase}}/velocities',
             'batch_size': '{{batch_size}}',
             'backend': P.Data.LMDB,
         },
@@ -161,7 +254,7 @@ layerTemplates = [
         'type': 'Pooling',
         'bottom': 'conv1',
         'args': {
-            'pool': 'MAX',
+            'pool': P.Pooling.MAX,
             'kernel_w': '{{pool1_kernel_w}}',
             'kernel_h': '{{pool1_kernel_h}}',
             'stride_w': '{{pool1_stride_w}}',
@@ -196,7 +289,7 @@ layerTemplates = [
         'type': 'Pooling',
         'bottom': 'conv2',
         'args': {
-            'pool': 'MAX',
+            'pool': P.Pooling.MAX,
             'kernel_w': '{{pool2_kernel_w}}',
             'kernel_h': '{{pool2_kernel_h}}',
             'stride_w': '{{pool2_stride_w}}',
@@ -314,7 +407,7 @@ layerTemplates = [
     {
         'name': 'ip2_note',
         'type': 'InnerProduct',
-        'bottom': 'ip1_note',
+        'bottom': 'relu1',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -333,7 +426,7 @@ layerTemplates = [
     {
         'name': 'ip2_time',
         'type': 'InnerProduct',
-        'bottom': 'ip1_time',
+        'bottom': 'relu2',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -352,7 +445,7 @@ layerTemplates = [
     {
         'name': 'ip2_duration',
         'type': 'InnerProduct',
-        'bottom': 'ip1_duration',
+        'bottom': 'relu3',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -371,7 +464,7 @@ layerTemplates = [
     {
         'name': 'ip2_velocity',
         'type': 'InnerProduct',
-        'bottom': 'ip1_velocity',
+        'bottom': 'relu4',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -421,13 +514,44 @@ layerTemplates = [
     },
 ]
 
+solverTemplate = """
+# The train/test net protocol buffer definition
+train_net: 'music/caffe/random/{{train_net}}'
+test_net: 'music/caffe/random/{{test_net}}'
+# test_iter specifies how many forward passes the test should carry out.
+# In the case of MNIST, we have test batch size 100 and 100 test iterations,
+# covering the full 10,000 testing images.
+test_iter: 100
+# Carry out testing every 500 training iterations.
+test_interval: 500
+# The base learning rate, momentum and the weight decay of the network.
+base_lr: {{base_lr}}
+momentum: {{lr_momentum}}
+weight_decay: {{weight_decay}}
+# The learning rate policy
+lr_policy: "inv"
+gamma: {{lr_gamma}}
+power: {{lr_power}}
+# Display every 100 iterations
+display: 100
+# The maximum number of iterations
+max_iter: 10000
+# snapshot intermediate results
+snapshot: 5000
+snapshot_prefix: "music/snapshots/"
+# solver mode: CPU or GPU
+solver_mode: CPU
+"""
+
 def genValues(paramTemplates):
     values = {}
     for k, v in paramTemplates.iteritems():
         if v['type'] == 'real':
             value = float(v['min']) + random.random() * (float(v['max']) - float(v['min']))
         elif v['type'] == 'log':
-            value = math.pow(10, float(v['min']) + random.random() * (float(v['max']) - float(v['min'])))
+            lMin = math.log10(float(v['min']))
+            lMax = math.log10(float(v['max']))
+            value = math.pow(10, lMin + random.random() * (lMax - lMin))
         elif v['type'] == 'int':
             if v.has_key('step'):
                 step = int(v['step'])
@@ -441,33 +565,62 @@ def genValues(paramTemplates):
         values[k] = value
     return values
 
-def subValues(d, paramValues):
-    ret = {}
-    for el in d:
-        value = d[el]
-        if type(d[el]) is dict:
-            value = subValues(d[el], paramValues)
-        elif type(d[el]) is str:
-            m = re.search('{{(.*)}}', d[el])
-            if m:
-                value = paramValues[m.group(1).strip()]
-        ret[el] = (value)
-    return ret
+def subValues(d, paramValues, phase):
+    if type(d) is str:
+        m = re.search('{{(.*)}}', d)
+        if m:
+            if m.group(1).strip() == 'phase':
+                return d[:m.start()] + phase + d[m.end():]
+            else:
+                return paramValues[m.group(1).strip()]
+        else:
+            return d
+    elif type(d) is dict:
+        ret = {}
+        for el in d:
+            ret[el] = subValues(d[el], paramValues, phase)
+        return ret
+    elif type(d) is list:
+        return map(lambda x: subValues(x, paramValues, phase), d)
+    else:
+        return d
 
 def genNet(layerDefs):
     net = caffe.NetSpec()
     for l in layerDefs:
-        if l.has_key('bottom'):
-            layer = getattr(L, l['type'])(getattr(net, l['bottom']), **l['args'])
+        if l.has_key('args'):
+            args = l['args']
         else:
-            layer = getattr(L, l['type'])(**l['args'])
+            args = {}
+
+        if l.has_key('bottom'):
+            if type(l['bottom']) is list:
+                bottoms = map(lambda x: getattr(net, x), l['bottom'])
+                layer = getattr(L, l['type'])(*bottoms, **args)
+            else:
+                layer = getattr(L, l['type'])(getattr(net, l['bottom']), **args)
+        else:
+            layer = getattr(L, l['type'])(**args)
         net.__dict__.update({l['name']: layer})
     return net
 
+def genSolver(solverTemplate, paramValues):
+    def subValue(m):
+        return str(paramValues[m.group(1).strip()])
+    return re.sub('{{(.*?)}}', subValue, solverTemplate)
+
 for i in range(maxIter):
+    netFiles = {
+        'train': 'train' + str(i) + '.prototxt',
+        'test': 'test' + str(i) + '.prototxt',
+    }
     paramValues = genValues(paramTemplates)
-    layerDefs = map(lambda x: subValues(x, paramValues), layerTemplates)
-    net = genNet(layerDefs)
-    #print net.to_proto()
-    #print dir(net.to_proto().layer)
-    #print net.conv1.to_proto().layer[1].convolution_param.num_output
+    for phase in ['train', 'test']:
+        layerDefs = subValues(layerTemplates, paramValues, phase)
+        net = genNet(layerDefs)
+        with open(path.join(outDir, netFiles[phase]), 'w') as f:
+            f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
+    solverTemplate = solverTemplate.replace('{{train_net}}', netFiles['train']).replace('{{test_net}}', netFiles['test'])
+    solverDef = genSolver(solverTemplate, paramValues)
+    with open(path.join(outDir, 'solver' + str(i) + '.prototxt'), 'w') as f:
+        f.write(solverDef)
