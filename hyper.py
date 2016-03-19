@@ -5,21 +5,18 @@ import random
 from os import path
 caffeRoot = path.join(sys.path[0], '..', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
+from numpy import zeros, isfinite, floor, ceil
 import caffe
 from caffe import layers as L
 from caffe import params as P
 caffe.set_mode_cpu()
-templateFile = path.join(sys.path[0], 'caffe', 'train_test.template')
 outDir = path.join(sys.path[0], 'caffe', 'random')
-snapshot = path.join(sys.path[0], 'caffe', 'snapshots', '_iter_6509.caffemodel')
-maxIter = 10
+lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
+numNet = 1
+numIter = 25
+testInterval = 5
 
 paramTemplates = {
-    'batch_size': {
-        'type': 'int',
-        'min': 1,
-        'max': 50,
-    },
     'conv1_num_output': {
         'type': 'int',
         'min': 5,
@@ -178,8 +175,8 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/{{phase}}/images',
-            'batch_size': '{{batch_size}}',
+            'source': path.join(lmdbDir, '{{phase}}/images'),
+            'batch_size': 20,
             'backend': P.Data.LMDB,
             'transform_param': {
                 'scale': 1./255
@@ -191,8 +188,8 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/{{phase}}/notes',
-            'batch_size': '{{batch_size}}',
+            'source': path.join(lmdbDir, '{{phase}}/notes'),
+            'batch_size': 20,
             'backend': P.Data.LMDB,
         },
     },
@@ -201,8 +198,8 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/{{phase}}/times',
-            'batch_size': '{{batch_size}}',
+            'source': path.join(lmdbDir, '{{phase}}/times'),
+            'batch_size': 20,
             'backend': P.Data.LMDB,
         },
     },
@@ -211,8 +208,8 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/{{phase}}/durations',
-            'batch_size': '{{batch_size}}',
+            'source': path.join(lmdbDir, '{{phase}}/durations'),
+            'batch_size': 20,
             'backend': P.Data.LMDB,
         },
     },
@@ -221,8 +218,8 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': 'music/lmdb/{{phase}}/velocities',
-            'batch_size': '{{batch_size}}',
+            'source': path.join(lmdbDir, '{{phase}}/velocities'),
+            'batch_size': 20,
             'backend': P.Data.LMDB,
         },
     },
@@ -515,15 +512,10 @@ layerTemplates = [
 ]
 
 solverTemplate = """
-# The train/test net protocol buffer definition
-train_net: 'music/caffe/random/{{train_net}}'
-test_net: 'music/caffe/random/{{test_net}}'
-# test_iter specifies how many forward passes the test should carry out.
-# In the case of MNIST, we have test batch size 100 and 100 test iterations,
-# covering the full 10,000 testing images.
-test_iter: 100
-# Carry out testing every 500 training iterations.
-test_interval: 500
+train_net: '{{train_net}}'
+test_net: '{{test_net}}'
+test_iter: 1
+test_interval: 10000
 # The base learning rate, momentum and the weight decay of the network.
 base_lr: {{base_lr}}
 momentum: {{lr_momentum}}
@@ -533,13 +525,13 @@ lr_policy: "inv"
 gamma: {{lr_gamma}}
 power: {{lr_power}}
 # Display every 100 iterations
-display: 100
+#display: 100
 # The maximum number of iterations
-max_iter: 10000
+#max_iter: 10000
 # snapshot intermediate results
-snapshot: 5000
-snapshot_prefix: "music/snapshots/"
-# solver mode: CPU or GPU
+#snapshot: 5000
+#snapshot_prefix: "music/caffe/snapshots/"
+#solver mode: CPU or GPU
 solver_mode: CPU
 """
 
@@ -609,18 +601,51 @@ def genSolver(solverTemplate, paramValues):
         return str(paramValues[m.group(1).strip()])
     return re.sub('{{(.*?)}}', subValue, solverTemplate)
 
-for i in range(maxIter):
+def runSolver(solver):
+    global numIter, testInterval
+    trainLoss = zeros((numIter, 4))
+    testLoss = zeros((int(ceil(numIter / testInterval)), 4))
+    for it in range(numIter):
+        print it
+        solver.step(1)
+        trainLoss[it] = (
+            solver.net.blobs['SoftmaxWithLoss1'].data,
+            solver.net.blobs['SoftmaxWithLoss2'].data,
+            solver.net.blobs['SoftmaxWithLoss3'].data,
+            solver.net.blobs['SoftmaxWithLoss4'].data,
+        )
+        if it % testInterval == 0:
+            solver.test_nets[0].forward()
+            testLoss[int(floor(it / testInterval))] = (
+                solver.test_nets[0].blobs['SoftmaxWithLoss1'].data,
+                solver.test_nets[0].blobs['SoftmaxWithLoss2'].data,
+                solver.test_nets[0].blobs['SoftmaxWithLoss3'].data,
+                solver.test_nets[0].blobs['SoftmaxWithLoss4'].data,
+            )
+    return (trainLoss, testLoss)
+
+for i in range(numNet):
     netFiles = {
-        'train': 'train' + str(i) + '.prototxt',
-        'test': 'test' + str(i) + '.prototxt',
+        'train': path.join(outDir, 'train' + str(i) + '.prototxt'),
+        'test': path.join(outDir, 'test' + str(i) + '.prototxt'),
     }
     paramValues = genValues(paramTemplates)
     for phase in ['train', 'test']:
         layerDefs = subValues(layerTemplates, paramValues, phase)
         net = genNet(layerDefs)
-        with open(path.join(outDir, netFiles[phase]), 'w') as f:
+        with open(netFiles[phase], 'w') as f:
             f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
-    solverTemplate = solverTemplate.replace('{{train_net}}', netFiles['train']).replace('{{test_net}}', netFiles['test'])
-    solverDef = genSolver(solverTemplate, paramValues)
-    with open(path.join(outDir, 'solver' + str(i) + '.prototxt'), 'w') as f:
+    solverDef = solverTemplate.replace('{{train_net}}', netFiles['train']).replace('{{test_net}}', netFiles['test'])
+    solverDef = genSolver(solverDef, paramValues)
+    solverFile = path.join(outDir, 'solver' + str(i) + '.prototxt')
+    with open(solverFile, 'w') as f:
         f.write(solverDef)
+    solver = caffe.SGDSolver(solverFile)
+    #print solver.test_nets[0].forward.__doc__
+    try:
+        (trainLoss, testLoss) = runSolver(solver)
+        print trainLoss.sum(0) / numIter
+        print testLoss.sum(0) / (numIter / testInterval)
+    except:
+        print 'oh well'
+        pass
