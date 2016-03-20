@@ -761,7 +761,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 return (b.t + b.d) - (a.t + a.d);
             });
             var lastNote = composition.notes[0];
-            var offlineCtx = new OfflineAudioContext(1, 44100 * Math.ceil((lastNote.t + lastNote.d) * composition.tempo * 0.000001), 44100);
+            var offlineCtx = new OfflineAudioContext(1, 44100 * Math.ceil((lastNote.t + lastNote.d) * composition.tempo), 44100);
             composition.notes.sort(function(a, b) {
                 return a.t - b.t;
             });
@@ -793,12 +793,13 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     console.log('new src', sources.length);
                 }
                 sources[thisSrcIdx].idx = i;
-                var startTime = composition.notes[i].t * composition.tempo * 0.000001;
-                var endTime = (composition.notes[i].t + composition.notes[i].d) * composition.tempo * 0.000001;
+                var startTime = composition.notes[i].t * composition.tempo;
+                var endTime = (composition.notes[i].t + composition.notes[i].d) * composition.tempo;
                 //console.log(startTime, endTime);
                 sources[thisSrcIdx].osc.frequency.setValueAtTime(440 * Math.pow(1.0594630943592953, composition.notes[i].note), startTime); // TODO make table of these values
                 sources[thisSrcIdx].gain.gain.setValueAtTime(1, startTime);
                 sources[thisSrcIdx].gain.gain.setValueAtTime(0, endTime);
+                console.log(startTime, endTime);
             }
             //var gainNode = offlineCtx.createGain();
             //oscillator.connect(gainNode);

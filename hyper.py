@@ -1,20 +1,22 @@
 import sys
 import re
-import math
 import random
+import subprocess
+import shutil
+import time
 from os import path
+from numpy import zeros, log10, power, isfinite
 caffeRoot = path.join(sys.path[0], '..', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
-from numpy import zeros, isfinite, floor, ceil
 import caffe
 from caffe import layers as L
 from caffe import params as P
 caffe.set_mode_cpu()
 outDir = path.join(sys.path[0], 'caffe', 'random')
 lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
-numNet = 1
-numIter = 25
-testInterval = 5
+maxGood = 20
+numIter = 200
+testInterval = 25
 
 paramTemplates = {
     'conv1_num_output': {
@@ -541,9 +543,9 @@ def genValues(paramTemplates):
         if v['type'] == 'real':
             value = float(v['min']) + random.random() * (float(v['max']) - float(v['min']))
         elif v['type'] == 'log':
-            lMin = math.log10(float(v['min']))
-            lMax = math.log10(float(v['max']))
-            value = math.pow(10, lMin + random.random() * (lMax - lMin))
+            lMin = log10(float(v['min']))
+            lMax = log10(float(v['max']))
+            value = power(10, lMin + random.random() * (lMax - lMin))
         elif v['type'] == 'int':
             if v.has_key('step'):
                 step = int(v['step'])
@@ -601,51 +603,43 @@ def genSolver(solverTemplate, paramValues):
         return str(paramValues[m.group(1).strip()])
     return re.sub('{{(.*?)}}', subValue, solverTemplate)
 
-def runSolver(solver):
-    global numIter, testInterval
-    trainLoss = zeros((numIter, 4))
-    testLoss = zeros((int(ceil(numIter / testInterval)), 4))
-    for it in range(numIter):
-        print it
-        solver.step(1)
-        trainLoss[it] = (
-            solver.net.blobs['SoftmaxWithLoss1'].data,
-            solver.net.blobs['SoftmaxWithLoss2'].data,
-            solver.net.blobs['SoftmaxWithLoss3'].data,
-            solver.net.blobs['SoftmaxWithLoss4'].data,
-        )
-        if it % testInterval == 0:
-            solver.test_nets[0].forward()
-            testLoss[int(floor(it / testInterval))] = (
-                solver.test_nets[0].blobs['SoftmaxWithLoss1'].data,
-                solver.test_nets[0].blobs['SoftmaxWithLoss2'].data,
-                solver.test_nets[0].blobs['SoftmaxWithLoss3'].data,
-                solver.test_nets[0].blobs['SoftmaxWithLoss4'].data,
-            )
-    return (trainLoss, testLoss)
-
-for i in range(numNet):
+numNet = 0
+numGood = 0
+results = ''
+timePrefix = time.strftime('%Y%b%d-%H:%M')
+while numGood < maxGood:
+    #print numGood
     netFiles = {
-        'train': path.join(outDir, 'train' + str(i) + '.prototxt'),
-        'test': path.join(outDir, 'test' + str(i) + '.prototxt'),
+        'train': timePrefix + '-train-' + str(numNet) + '.prototxt',
+        'test': timePrefix + '-test-' + str(numNet) + '.prototxt',
     }
+    solverFile = timePrefix + '-solver-' + str(numNet) + '.prototxt'
+
     paramValues = genValues(paramTemplates)
     for phase in ['train', 'test']:
         layerDefs = subValues(layerTemplates, paramValues, phase)
         net = genNet(layerDefs)
-        with open(netFiles[phase], 'w') as f:
+        with open(path.join(outDir, netFiles[phase]), 'w') as f:
             f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
-    solverDef = solverTemplate.replace('{{train_net}}', netFiles['train']).replace('{{test_net}}', netFiles['test'])
+    solverDef = solverTemplate.replace('{{train_net}}', path.join(outDir, netFiles['train'])).replace('{{test_net}}', path.join(outDir, netFiles['test']))
     solverDef = genSolver(solverDef, paramValues)
-    solverFile = path.join(outDir, 'solver' + str(i) + '.prototxt')
-    with open(solverFile, 'w') as f:
+    with open(path.join(outDir, solverFile), 'w') as f:
         f.write(solverDef)
-    solver = caffe.SGDSolver(solverFile)
-    #print solver.test_nets[0].forward.__doc__
-    try:
-        (trainLoss, testLoss) = runSolver(solver)
-        print trainLoss.sum(0) / numIter
-        print testLoss.sum(0) / (numIter / testInterval)
-    except:
-        print 'oh well'
-        pass
+    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile)], stdout=subprocess.PIPE)
+    out = p.stdout.read()
+    #err = p.stderr.read()
+    if p.poll() == 0 and isfinite(float(out)):
+        results += timePrefix + '-' + str(numNet) + '(' + str(maxGood) + '): ' + out
+        numGood += 1
+        shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
+        shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
+        shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
+    else:
+        print p.returncode
+        shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'nogood', netFiles['train']))
+        shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'nogood', netFiles['test']))
+        shutil.move(path.join(outDir, solverFile), path.join(outDir, 'nogood', solverFile))
+    numNet += 1
+
+with open(path.join(outDir, 'results.txt'), 'w') as f:
+    f.write(results)
