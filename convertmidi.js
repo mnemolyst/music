@@ -590,11 +590,11 @@ fs.readFile(fileIn, function(err, data) {
                     });
                 });
             } else {
-                fs.appendFile(imageFile,    'tr.commit()');
-                fs.appendFile(noteFile,     'tr.commit()');
-                fs.appendFile(timeFile,     'tr.commit()');
-                fs.appendFile(durationFile, 'tr.commit()');
-                fs.appendFile(velocityFile, 'tr.commit()');
+                fs.appendFile(imageFile,    'tr.commit()\nenv.close()');
+                fs.appendFile(noteFile,     'tr.commit()\nenv.close()');
+                fs.appendFile(timeFile,     'tr.commit()\nenv.close()');
+                fs.appendFile(durationFile, 'tr.commit()\nenv.close()');
+                fs.appendFile(velocityFile, 'tr.commit()\nenv.close()');
             }
         },
     }
