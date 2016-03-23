@@ -38,12 +38,12 @@ paramTemplates = {
     'conv1_stride_w': {
         'type': 'int',
         'min': 1,
-        'max': 20,
+        'max': 5,
     },
     'conv1_stride_h': {
         'type': 'int',
         'min': 1,
-        'max': 10,
+        'max': 5,
     },
     'pool1_kernel_w': {
         'type': 'int',
@@ -58,7 +58,7 @@ paramTemplates = {
     'pool1_stride_w': {
         'type': 'int',
         'min': 1,
-        'max': 10,
+        'max': 5,
     },
     'pool1_stride_h': {
         'type': 'int',
@@ -83,12 +83,12 @@ paramTemplates = {
     'conv2_stride_w': {
         'type': 'int',
         'min': 1,
-        'max': 20,
+        'max': 5,
     },
     'conv2_stride_h': {
         'type': 'int',
         'min': 1,
-        'max': 10,
+        'max': 5,
     },
     'pool2_kernel_w': {
         'type': 'int',
@@ -103,7 +103,7 @@ paramTemplates = {
     'pool2_stride_w': {
         'type': 'int',
         'min': 1,
-        'max': 10,
+        'max': 5,
     },
     'pool2_stride_h': {
         'type': 'int',
@@ -250,9 +250,17 @@ layerTemplates = [
         },
     },
     {
+        'name': 'relu1',
+        'type': 'ReLU',
+        'bottom': 'conv1',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
         'name': 'pool1',
         'type': 'Pooling',
-        'bottom': 'conv1',
+        'bottom': 'relu1',
         'args': {
             'pool': P.Pooling.MAX,
             'kernel_w': '{{pool1_kernel_w}}',
@@ -285,9 +293,17 @@ layerTemplates = [
         },
     },
     {
+        'name': 'relu2',
+        'type': 'ReLU',
+        'bottom': 'conv2',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
         'name': 'pool2',
         'type': 'Pooling',
-        'bottom': 'conv2',
+        'bottom': 'relu2',
         'args': {
             'pool': P.Pooling.MAX,
             'kernel_w': '{{pool2_kernel_w}}',
@@ -373,7 +389,7 @@ layerTemplates = [
         },
     },
     {
-        'name': 'relu1',
+        'name': 'relu5',
         'type': 'ReLU',
         'bottom': 'ip1_note',
         'args': {
@@ -381,7 +397,7 @@ layerTemplates = [
         },
     },
     {
-        'name': 'relu2',
+        'name': 'relu6',
         'type': 'ReLU',
         'bottom': 'ip1_time',
         'args': {
@@ -389,7 +405,7 @@ layerTemplates = [
         },
     },
     {
-        'name': 'relu3',
+        'name': 'relu7',
         'type': 'ReLU',
         'bottom': 'ip1_duration',
         'args': {
@@ -397,7 +413,7 @@ layerTemplates = [
         },
     },
     {
-        'name': 'relu4',
+        'name': 'relu8',
         'type': 'ReLU',
         'bottom': 'ip1_velocity',
         'args': {
@@ -407,7 +423,7 @@ layerTemplates = [
     {
         'name': 'ip2_note',
         'type': 'InnerProduct',
-        'bottom': 'relu1',
+        'bottom': 'relu5',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -426,7 +442,7 @@ layerTemplates = [
     {
         'name': 'ip2_time',
         'type': 'InnerProduct',
-        'bottom': 'relu2',
+        'bottom': 'relu6',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -445,7 +461,7 @@ layerTemplates = [
     {
         'name': 'ip2_duration',
         'type': 'InnerProduct',
-        'bottom': 'relu3',
+        'bottom': 'relu7',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -464,7 +480,7 @@ layerTemplates = [
     {
         'name': 'ip2_velocity',
         'type': 'InnerProduct',
-        'bottom': 'relu4',
+        'bottom': 'relu8',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -533,7 +549,7 @@ power: {{lr_power}}
 #max_iter: 10000
 # snapshot intermediate results
 snapshot: {{snapshot_int}}
-snapshot_prefix: {{snapshot_prefix}}
+snapshot_prefix: "{{snapshot_prefix}}"
 #solver mode: CPU or GPU
 solver_mode: CPU
 """
@@ -607,97 +623,102 @@ def genSolver(solverTemplate, paramValues):
 def fitPoly(data, degree=2):
     xi = arange(0, data.shape[0])
     xi2 = array([x*x for x in xi])
-    xi3 = array([x*x*x for x in xi])
-    A = array((xi3, xi2, xi, ones(data.shape[0])))
+    #xi3 = array([x*x*x for x in xi])
+    #A = array((xi3, xi2, xi, ones(data.shape[0])))
+    A = array((xi2, xi, ones(data.shape[0])))
     w = linalg.lstsq(A.T, data)[0]
-    y = w[0]*xi3 + w[1]*xi2 + w[2]*xi + w[3]
+    #y = w[0]*xi3 + w[1]*xi2 + w[2]*xi + w[3]
+    y = w[0]*xi2 + w[1]*xi + w[2]
     return (xi, y, w)
 
-numNet = 0
-nets = []
-timePrefix = time.strftime('%Y%b%d-%H:%M')
-#solverFiles = glob.glob(path.join(outDir, '*solver*'))
-#for solverFile in solverFiles:
-while True:
-    if len(nets) < maxNets:
-        netFiles = {
-            'train': timePrefix + '-train-' + str(numNet) + '.prototxt',
-            'test': timePrefix + '-test-' + str(numNet) + '.prototxt',
-        }
-        solverFile = timePrefix + '-solver-' + str(numNet) + '.prototxt'
-        paramValues = genValues(paramTemplates)
-        for phase in ['train', 'test']:
-            layerDefs = subValues(layerTemplates, paramValues, phase)
-            net = genNet(layerDefs)
-            with open(path.join(outDir, netFiles[phase]), 'w') as f:
-                f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
-        solverDef = solverTemplate
-        solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
-        solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
-        solverDef = solverDef.replace('{{snapshot_int}}', '100')
-        solverDef = solverDef.replace('{{snapshot_prefix}}', path.join(outDir, 'snapshots'))
-        solverDef = genSolver(solverDef, paramValues)
-        with open(path.join(outDir, solverFile), 'w') as f:
-            f.write(solverDef)
-        p = subprocess.Popen(['python', 'runSolver.py', solverFile, '100', '10'], stdout=subprocess.PIPE)
-        out = p.stdout.read()
-
-        try:
-            unp = pickle.loads(out)
-        except Exception:
-            unp = array((float('nan'), float('nan')))
-
-        if p.poll() == 0 and isfinite(unp[0].sum()) and isfinite(unp[1].sum()):
-            shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
-            shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
-            shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
-            nets.append((solverFile, unp[1].sum()))
-        else:
-            #print p.returncode
-            #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'nogood', netFiles['train']))
-            #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'nogood', netFiles['test']))
-            #shutil.move(path.join(outDir, solverFile), path.join(outDir, 'nogood', solverFile))
-            os.remove(path.join(outDir, netFiles['train']))
-            os.remove(path.join(outDir, netFiles['test']))
-            os.remove(path.join(outDir, solverFile))
-        numNet += 1
-    if len(nets) >= maxGood:
-        break
-
-nets.sort(lambda a, b: cmp(a[1], b[1]))
-results = ''
-print 'REFINING'
-for i in nets[:25]:
-    p = subprocess.Popen(['python', 'runSolver.py', i[0], '1000', '10'], stdout=subprocess.PIPE)
+def runSolver(n):
+    global paramTemplates, layerTemplates, solverTemplate, timePrefix, outDir, nets
+    netFiles = {
+        'train': timePrefix + '-train-' + str(n) + '.prototxt',
+        'test': timePrefix + '-test-' + str(n) + '.prototxt',
+    }
+    solverFile = timePrefix + '-solver-' + str(n) + '.prototxt'
+    paramValues = genValues(paramTemplates)
+    for phase in ['train', 'test']:
+        layerDefs = subValues(layerTemplates, paramValues, phase)
+        net = genNet(layerDefs)
+        with open(path.join(outDir, netFiles[phase]), 'w') as f:
+            f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
+    solverDef = solverTemplate
+    solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
+    solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
+    solverDef = solverDef.replace('{{snapshot_int}}', '100')
+    solverDef = solverDef.replace('{{snapshot_prefix}}', path.join(outDir, 'snapshots', timePrefix + '-' + str(n)))
+    solverDef = genSolver(solverDef, paramValues)
+    with open(path.join(outDir, solverFile), 'w') as f:
+        f.write(solverDef)
+    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '100', '10'], stdout=subprocess.PIPE)
     out = p.stdout.read()
 
     try:
         unp = pickle.loads(out)
-    except Exception:
+    except Exception as e:
         unp = array((float('nan'), float('nan')))
 
     if p.poll() == 0 and isfinite(unp[0].sum()) and isfinite(unp[1].sum()):
-        print i, 'complete'
-        results += i[0] + '\n' + str(unp) + '\n\n'
-        (xi, y0, w0) = fitPoly(unp[1][:,0])
-        print xi, y0, unp
-        plt.plot(xi, unp[1][:,0], xi, y0)
-        plt.savefig(i[0] + '.notes.png')
+        print unp[1]
+        (xi, y, w) = fitPoly(unp[1].sum(1))
+        staX = w[1] / (-2 * w[0])
+        staY = ((w[0] * staX) + w[1]) * staX + w[2]
+        plt.plot(xi, unp[1].sum(1), xi, y)
+        plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
         plt.clf()
-        (xi, y1, w1) = fitPoly(unp[1][:,1])
-        plt.plot(xi, unp[1][:,1], xi, y1)
-        plt.savefig(i[0] + '.times.png')
-        plt.clf()
-        (xi, y2, w2) = fitPoly(unp[1][:,2])
-        plt.plot(xi, unp[1][:,2], xi, y2)
-        plt.savefig(i[0] + '.durations.png')
-        plt.clf()
-        (xi, y3, w3) = fitPoly(unp[1][:,3])
-        plt.plot(xi, unp[1][:,3], xi, y3)
-        plt.savefig(i[0] + '.velocities.png')
-        plt.clf()
+        nets.append((solverFile, w, y, staX, staY))
+        with open(path.join(outDir, timePrefix + '-nets'), 'w') as f:
+            f.write(pickle.dumps(nets))
+        shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
+        shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
+        shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
     else:
-        print i, 'failed'
+        #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'nogood', netFiles['train']))
+        #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'nogood', netFiles['test']))
+        #shutil.move(path.join(outDir, solverFile), path.join(outDir, 'nogood', solverFile))
+        remove(path.join(outDir, netFiles['train']))
+        remove(path.join(outDir, netFiles['test']))
+        remove(path.join(outDir, solverFile))
 
-with open(path.join(outDir, 'results.txt'), 'w') as f:
-    f.write(results)
+nets = []
+timePrefix = time.strftime('%Y%b%d-%H:%M')
+#trainFiles = glob.glob(path.join(outDir, 'good', '*train*'))
+#testFiles = glob.glob(path.join(outDir, 'good', '*test*'))
+#for pair in zip(trainFiles, testFiles):
+#    trainM = re.match('(.*?)-train-(\d+).prototxt', pair[0])
+#    testM = re.match('(.*?)-test-(\d+).prototxt', pair[1])
+#    trainNet = caffe.Net(pair[0], path.join(outDir, 'snapshots', path.basename(trainM.group(1)) + '-' + trainM.group(2) + '_iter_25.caffemodel'), caffe.TRAIN)
+#    testNet = caffe.Net(pair[1], path.join(outDir, 'snapshots', path.basename(testM.group(1)) + '-' + testM.group(2) + '_iter_25.caffemodel'), caffe.TEST)
+#    testNet.forward(start = 'Convolution1')
+#    print dir(trainNet)
+#    print testNet.blobs['SoftmaxWithLoss1'].data
+#    print testNet.blobs['SoftmaxWithLoss2'].data
+#    print testNet.blobs['SoftmaxWithLoss3'].data
+#    print testNet.blobs['SoftmaxWithLoss4'].data
+#    for i in range(25):
+#        trainNet.step(1)
+#    testNet.forward('Convolution1')
+#    print testNet.blobs['SoftmaxWithLoss1'].data
+#    print testNet.blobs['SoftmaxWithLoss2'].data
+#    print testNet.blobs['SoftmaxWithLoss3'].data
+#    print testNet.blobs['SoftmaxWithLoss4'].data
+#    break
+solverFiles = glob.glob(path.join(outDir, 'good', '*solver*'))
+for solverFile in solverFiles:
+    m = re.match('(.*?)-solver-(\d+).prototxt', solverFile)
+    snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_100.solverstate')
+    solver = caffe.SGDSolver(solverFile)
+    print dir(solver)
+    solver.restore(snapshot)
+    solver.step(100)
+    break
+#while True:
+#    if len(nets) < maxNets:
+#        print len(nets)
+#        runSolver(len(nets))
+#    if len(nets) >= maxNets:
+#        break
+
+#nets.sort(lambda a, b: cmp(a[1], b[1]))

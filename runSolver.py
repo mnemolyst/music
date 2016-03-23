@@ -11,7 +11,7 @@ lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
 
 def runSolver(solver, numIter, testInterval):
     trainLoss = zeros((numIter, 4))
-    testLoss = zeros((int(ceil(numIter / testInterval)), 4))
+    testLoss = zeros((ceil(float(numIter) / testInterval), 4))
     for it in range(numIter):
         solver.step(1)
         trainLoss[it] = (
@@ -47,7 +47,7 @@ if __name__ == '__main__':
         solver = caffe.SGDSolver(solverFile)
         (trainLoss, testLoss) = runSolver(solver, numIter, testInterval)
     except Exception as err:
-        #sys.stderr.write(err)
+        sys.stderr.write(err)
         raise err
     else:
         print pickle.dumps((trainLoss, testLoss))
