@@ -8,14 +8,15 @@ var Promise = require('bluebird');
 var trainTest = 'test';
 var genStart = 5;
 var genEnd = null;
-var genIter = 2;
-var makeImages = false;
+var genIter = 1;
+var makeImages = true;
 //var genStart = 200;
 //var genEnd = 210;
 //var genIter = 1;
 //var makeImages = true;
 
 var makeMongo = false;
+var fullBright = true;
 var bpp = 1; // bytes per pixel
 var excludeTrainNote = true;
 //var vScale = 1;
@@ -98,6 +99,7 @@ fs.readFile(fileIn, function(err, data) {
                             n: event.noteNumber,
                             v: event.velocity,
                         });
+                        //if (event.velocity > 0) console.log(event.velocity, i);
                         if (time > tracks[i].lastNoteEnd) {
                             tracks[i].lastNoteEnd = time;
                         }
@@ -119,11 +121,10 @@ fs.readFile(fileIn, function(err, data) {
     }
 
     var ticksPerBeat = midifile.header.ticksPerBeat;
-    //var oneMeasure = ticksPerBeat * tsNum / tsDen; // one measure's worth of ticks
     var secondsPerTick = tempo / ticksPerBeat;
-    var minResScale = secondsPerTick * 16; // horiz scale to make 1/16 sec (1/64 note at 120 bpm) occupy 1 pixel
-    var timeWidth = cols / minResScale;
-    var track = tracks[1];
+    var minResScale = secondsPerTick * 16; // horiz scale to make 1/16 sec (1/32 note at 120 bpm) occupy 1 pixel
+    tracks.sort(function(a, b) { return a.notes.length > b.notes.length ? -1 : a.notes.length < b.notes.length ? 1 : 0 });
+    var track = tracks[0];
 
     function dist(a, b) {
         var nd = track.notes[a].n - track.notes[b].n;
@@ -342,6 +343,9 @@ fs.readFile(fileIn, function(err, data) {
         // trainType 0: all notes before; 1: all before, some after; 2: single melody before; 3: single melody before, some after
         // 4: all notes before and after except some same-melody
         var trainNotes = [];
+        // TODO the effect of this on training data
+        var resScale = minResScale * (1 + Math.random());
+        var timeWidth = cols / resScale;
         if (trainType === 0 || trainType === 2) {
             var trainNoteColT = (Math.random() * 0.4 + 0.5) * timeWidth;
         } else {
@@ -417,8 +421,8 @@ fs.readFile(fileIn, function(err, data) {
         imageBuf.fill(0);
         for (var i = 0; i < trainNotes.length; i++) {
             var note = track.notes[trainNotes[i]];
-            var lc = Math.round((note.t - firstT + padL) * minResScale);
-            var uc = Math.round((note.t + note.d - firstT + padL) * minResScale);
+            var lc = Math.round((note.t - firstT + padL) * resScale);
+            var uc = Math.round((note.t + note.d - firstT + padL) * resScale);
             lc = Math.max(0, Math.min(lc, cols));
             uc = Math.max(0, Math.min(uc, cols));
             for (var j = lc; j < uc; j++) {
@@ -440,7 +444,11 @@ fs.readFile(fileIn, function(err, data) {
                             }
                         }
                     } else {
-                        imageBuf[idx] = Math.floor(note.v * (255 / 127));
+                        if (fullBright) {
+                            imageBuf[idx] = 255;
+                        } else {
+                            imageBuf[idx] = Math.floor(note.v * (255 / 127));
+                        }
                     }
                 }
             }
@@ -448,8 +456,132 @@ fs.readFile(fileIn, function(err, data) {
         // training note indicator line
         for (var i = indicatorTop; i < indicatorBottom; i++) {
             for (var k = 0; k < bpp; k++) {
-                var idx = Math.round(i * cols + (indicatorT - firstT + padL) * minResScale) * bpp + k;
+                var idx = Math.round(i * cols + (indicatorT - firstT + padL) * resScale) * bpp + k;
                 imageBuf[idx] = 255;
+            }
+        }
+
+        return {
+            image: imageBuf,
+            note: trainNote.n,
+            time: indicatorSixtyfourthsOffset + 32,
+            duration: Math.min(Math.round(trainNote.d / ticksPerBeat * 16), 64),
+            velocity: Math.floor(trainNote.v / 8),
+            rows: rows,
+            cols: cols,
+            bpp: bpp,
+        };
+    }
+
+    function generateTrainingPoint2(tni) {
+        var trainNote = track.notes[tni];
+
+        var c = melodies;
+
+        // build training set
+        var trainType = Math.floor(Math.random() * 2);
+        var resScale = minResScale * (1 + Math.random());
+        var timeWidth = cols / resScale;
+        if (trainType === 0) {
+            var trainNoteColT = (Math.random() * 0.4 + 0.5) * timeWidth;
+        } else {
+            var trainNoteColT = (Math.random() * 0.8 + 0.1) * timeWidth;
+        }
+        var leftImgT = trainNote.t - trainNoteColT;
+        var rightImgT = leftImgT + timeWidth;
+        var leftLimitT = leftImgT + Math.random() * trainNoteColT;
+        var rightLimitT = Math.random() * (timeWidth - trainNoteColT);
+        var trainMelody = null;
+        var incompleteMelodies = [];
+        for (var i = 0; i < c.length; i++) {
+            if (c[i].indexOf(tni) !== -1) {
+                incompleteMelodies.push(i);
+                trainMelody = i;
+            } else if (Math.random() < 0.5) {
+                incompleteMelodies.push(i);
+            }
+        }
+
+        var firstT = trainNote.t;
+        var lastT = trainNote.t + trainNote.d;
+        var lowN = trainNote.n;
+        var highN = trainNote.n;
+        var trainNotes = [];
+        for (var i = 0; i < track.notes.length; i++) {
+            var note = track.notes[i];
+            var noteMelody = null;
+            for (var j = 0; j < c.length; j++) {
+                if (c[j].indexOf(i) !== -1) {
+                    noteMelody = j;
+                }
+            }
+            if (
+                (leftImgT < note.t && note.t + note.d < rightImgT) // inside image
+                && (
+                    incompleteMelodies.indexOf(noteMelody) === -1 // in complete melody
+                    || note.t + note.d < leftLimitT // outside training time range
+                    || rightLimitT < note.t 
+                    || Math.random() < 0.8 // lucky
+                )
+                && (! excludeTrainNote || i !== tni) // not training note
+            ) {
+                trainNotes.push(i);
+
+                firstT = note.t < firstT ? note.t : firstT;
+                lastT = lastT < note.t + note.d ? note.t + note.d : lastT;
+                lowN = note.n < lowN ? note.n : lowN;
+                highN = highN < note.n ? note.n : highN;
+                if (lastInMelodyBefore < i && i < tni && c[trainMelody].indexOf(i) !== -1) {
+                    lastInMelodyBefore = i;
+                }
+            }
+        }
+
+        ////////////////
+        // draw image //
+        ////////////////
+
+        var imageBuf = new Buffer(rows * cols * bpp);
+        imageBuf.fill(0);
+        for (var i = 0; i < trainNotes.length; i++) {
+            var note = track.notes[trainNotes[i]];
+            var lc = Math.round((note.t - leftImgT) * resScale);
+            var uc = Math.round((note.t + note.d - leftImgT) * resScale);
+            lc = Math.max(0, Math.min(lc, cols));
+            uc = Math.max(0, Math.min(uc, cols));
+            for (var j = lc; j < uc; j++) {
+                colors: for (var k = 0; k < bpp; k++) {
+                    //idx = ((rows - (note.n - lowN + padB) * vScale - 2) * cols + j) * bpp + k;
+                    idx = ((rows - note.n - 1) * cols + j) * bpp + k;
+
+                    if (bpp === 3) {
+                        if (trainNotes[i] === tni) {
+                            imageBuf[idx] = colors[0][k];
+                        } else if (trainNotes[i] === lastInMelodyBefore) {
+                            imageBuf[idx] = colors[1][k];
+                        } else {
+                            for (var l = 0; l < c.length; l++) {
+                                if (c[l].indexOf(trainNotes[i]) !== -1) {
+                                    imageBuf[idx] = colors[l+2][k];
+                                    continue colors;
+                                }
+                            }
+                        }
+                    } else {
+                        if (fullBright) {
+                            imageBuf[idx] = 255;
+                        } else {
+                            imageBuf[idx] = Math.floor(note.v * (255 / 127));
+                        }
+                    }
+                }
+            }
+        }
+        // training box
+        for (var i = 0; i < 128; i++) {
+            for (var k = 0; k < bpp; k++) {
+                imageBuf[Math.round(i * cols + (leftLimitT - leftImgT) * resScale) * bpp + k] = 255;
+                imageBuf[Math.round(i * cols + (rightLimitT - leftImgT) * resScale) * bpp + k] = 255;
             }
         }
 
@@ -472,7 +604,7 @@ fs.readFile(fileIn, function(err, data) {
         spawn: function() {
             var self = this;
             return new Promise(function(resolve, reject) {
-                var trainPoint = generateTrainingPoint(self.tni);
+                var trainPoint = generateTrainingPoint2(self.tni);
                 self.trainPoint = trainPoint;
 
                 var imageProto = '';

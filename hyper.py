@@ -18,12 +18,14 @@ caffe.set_mode_cpu()
 outDir = path.join(sys.path[0], 'caffe', 'random')
 lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
 maxNets = 20
+nets = []
+timePrefix = time.strftime('%Y%b%d-%H:%M')
 
 paramTemplates = {
     'conv1_num_output': {
         'type': 'int',
-        'min': 5,
-        'max': 250,
+        'min': 100,
+        'max': 500,
     },
     'conv1_kernel_w': {
         'type': 'int',
@@ -41,6 +43,56 @@ paramTemplates = {
         'max': 5,
     },
     'conv1_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
+    },
+    'conv2_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
+    },
+    'conv2_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
+    },
+    'conv2_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
+    },
+    'conv2_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
+    },
+    'conv2_stride_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
+    },
+    'conv3_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
+    },
+    'conv3_kernel_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 20,
+    },
+    'conv3_kernel_h': {
+        'type': 'int',
+        'min': 1,
+        'max': 10,
+    },
+    'conv3_stride_w': {
+        'type': 'int',
+        'min': 1,
+        'max': 5,
+    },
+    'conv3_stride_h': {
         'type': 'int',
         'min': 1,
         'max': 5,
@@ -65,81 +117,49 @@ paramTemplates = {
         'min': 1,
         'max': 5,
     },
-    'conv2_num_output': {
-        'type': 'int',
-        'min': 5,
-        'max': 250,
-    },
-    'conv2_kernel_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 20,
-    },
-    'conv2_kernel_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 10,
-    },
-    'conv2_stride_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'conv2_stride_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'pool2_kernel_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 10,
-    },
-    'pool2_kernel_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'pool2_stride_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'pool2_stride_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
     'conv_bias_constant': {
         'type': 'real',
         'min': 0,
         'max': 1,
+    },
+    # ip1, ip2
+    'ip1_num_output': {
+        'type': 'int',
+        'min': 200,
+        'max': 800,
+    },
+    'ip2_num_output': {
+        'type': 'int',
+        'min': 200,
+        'max': 800,
+    },
+    # ip3
+    'ip3_note_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
+    },
+    'ip3_time_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
+    },
+    'ip3_duration_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
+    },
+    'ip3_velocity_num_output': {
+        'type': 'int',
+        'min': 100,
+        'max': 500,
     },
     'ip_bias_constant': {
         'type': 'real',
         'min': 0,
         'max': 1,
     },
-    'ip1_note_num_output': {
-        'type': 'int',
-        'min': 10,
-        'max': 500,
-    },
-    'ip1_time_num_output': {
-        'type': 'int',
-        'min': 10,
-        'max': 500,
-    },
-    'ip1_duration_num_output': {
-        'type': 'int',
-        'min': 10,
-        'max': 500,
-    },
-    'ip1_velocity_num_output': {
-        'type': 'int',
-        'min': 10,
-        'max': 200,
-    },
+    # solver params
     'bias_lr_mult': {
         'type': 'real',
         'min': 1,
@@ -147,8 +167,8 @@ paramTemplates = {
     },
     'base_lr': {
         'type': 'log',
-        'min': 0.0001,
-        'max': 0.1,
+        'min': 0.00001,
+        'max': 0.001,
     },
     'lr_momentum': {
         'type': 'real',
@@ -238,8 +258,8 @@ layerTemplates = [
             'num_output': '{{conv1_num_output}}',
             'kernel_w': '{{conv1_kernel_w}}',
             'kernel_h': '{{conv1_kernel_h}}',
-            'stride_w': '{{conv1_stride_w}}',
-            'stride_h': '{{conv1_stride_h}}',
+            'stride_w': 'min({{conv1_stride_w}}, {{conv1_kernel_w}})',
+            'stride_h': 'min({{conv1_stride_h}}, {{conv1_kernel_h}})',
             'weight_filler': {
                 'type': 'xavier'
             },
@@ -258,21 +278,9 @@ layerTemplates = [
         },
     },
     {
-        'name': 'pool1',
-        'type': 'Pooling',
-        'bottom': 'relu1',
-        'args': {
-            'pool': P.Pooling.MAX,
-            'kernel_w': '{{pool1_kernel_w}}',
-            'kernel_h': '{{pool1_kernel_h}}',
-            'stride_w': '{{pool1_stride_w}}',
-            'stride_h': '{{pool1_stride_h}}',
-        },
-    },
-    {
         'name': 'conv2',
         'type': 'Convolution',
-        'bottom': 'pool1',
+        'bottom': 'relu1',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -281,8 +289,8 @@ layerTemplates = [
             'num_output': '{{conv2_num_output}}',
             'kernel_w': '{{conv2_kernel_w}}',
             'kernel_h': '{{conv2_kernel_h}}',
-            'stride_w': '{{conv2_stride_w}}',
-            'stride_h': '{{conv2_stride_h}}',
+            'stride_w': 'min({{conv2_stride_w}}, {{conv2_kernel_w}})',
+            'stride_h': 'min({{conv2_stride_h}}, {{conv2_kernel_h}})',
             'weight_filler': {
                 'type': 'xavier'
             },
@@ -301,27 +309,58 @@ layerTemplates = [
         },
     },
     {
-        'name': 'pool2',
-        'type': 'Pooling',
+        'name': 'conv3',
+        'type': 'Convolution',
         'bottom': 'relu2',
         'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': '{{bias_lr_mult}}'},
+            ],
+            'num_output': '{{conv3_num_output}}',
+            'kernel_w': '{{conv3_kernel_w}}',
+            'kernel_h': '{{conv3_kernel_h}}',
+            'stride_w': 'min({{conv3_stride_w}}, {{conv3_kernel_w}})',
+            'stride_h': 'min({{conv3_stride_h}}, {{conv3_kernel_h}})',
+            'weight_filler': {
+                'type': 'xavier'
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': '{{conv_bias_constant}}',
+            },
+        },
+    },
+    {
+        'name': 'relu3',
+        'type': 'ReLU',
+        'bottom': 'conv3',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'pool1',
+        'type': 'Pooling',
+        'bottom': 'relu3',
+        'args': {
             'pool': P.Pooling.MAX,
-            'kernel_w': '{{pool2_kernel_w}}',
-            'kernel_h': '{{pool2_kernel_h}}',
-            'stride_w': '{{pool2_stride_w}}',
-            'stride_h': '{{pool2_stride_h}}',
+            'kernel_w': '{{pool1_kernel_w}}',
+            'kernel_h': '{{pool1_kernel_h}}',
+            'stride_w': 'min({{pool1_stride_w}}, {{pool1_kernel_w}})',
+            'stride_h': 'min({{pool1_stride_h}}, {{pool1_kernel_h}})',
         },
     },
     {
-        'name': 'ip1_note',
+        'name': 'ip1',
         'type': 'InnerProduct',
-        'bottom': 'pool2',
+        'bottom': 'pool1',
         'args': {
             'param': [
                 {'lr_mult': 1},
                 {'lr_mult': '{{bias_lr_mult}}'},
             ],
-            'num_output': '{{ip1_note_num_output}}',
+            'num_output': '{{ip1_num_output}}',
             'weight_filler': {
                 'type': 'xavier',
             },
@@ -332,53 +371,31 @@ layerTemplates = [
         },
     },
     {
-        'name': 'ip1_time',
-        'type': 'InnerProduct',
-        'bottom': 'pool2',
+        'name': 'relu4',
+        'type': 'ReLU',
+        'bottom': 'ip1',
         'args': {
-            'param': [
-                {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
-            ],
-            'num_output': '{{ip1_time_num_output}}',
-            'weight_filler': {
-                'type': 'xavier',
-            },
-            'bias_filler': {
-                'type': 'constant',
-                'value': '{{ip_bias_constant}}',
-            },
+            'in_place': True,
         },
     },
     {
-        'name': 'ip1_duration',
-        'type': 'InnerProduct',
-        'bottom': 'pool2',
+        'name': 'dropout1',
+        'type': 'Dropout',
+        'bottom': 'relu4',
         'args': {
-            'param': [
-                {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
-            ],
-            'num_output': '{{ip1_duration_num_output}}',
-            'weight_filler': {
-                'type': 'xavier',
-            },
-            'bias_filler': {
-                'type': 'constant',
-                'value': '{{ip_bias_constant}}',
-            },
+            'dropout_ratio': 0.5,
         },
     },
     {
-        'name': 'ip1_velocity',
+        'name': 'ip2',
         'type': 'InnerProduct',
-        'bottom': 'pool2',
+        'bottom': 'dropout1',
         'args': {
             'param': [
                 {'lr_mult': 1},
                 {'lr_mult': '{{bias_lr_mult}}'},
             ],
-            'num_output': '{{ip1_velocity_num_output}}',
+            'num_output': '{{ip2_num_output}}',
             'weight_filler': {
                 'type': 'xavier',
             },
@@ -391,39 +408,131 @@ layerTemplates = [
     {
         'name': 'relu5',
         'type': 'ReLU',
-        'bottom': 'ip1_note',
+        'bottom': 'ip2',
         'args': {
             'in_place': True,
         },
     },
     {
-        'name': 'relu6',
-        'type': 'ReLU',
-        'bottom': 'ip1_time',
-        'args': {
-            'in_place': True,
-        },
-    },
-    {
-        'name': 'relu7',
-        'type': 'ReLU',
-        'bottom': 'ip1_duration',
-        'args': {
-            'in_place': True,
-        },
-    },
-    {
-        'name': 'relu8',
-        'type': 'ReLU',
-        'bottom': 'ip1_velocity',
-        'args': {
-            'in_place': True,
-        },
-    },
-    {
-        'name': 'ip2_note',
-        'type': 'InnerProduct',
+        'name': 'dropout2',
+        'type': 'Dropout',
         'bottom': 'relu5',
+        'args': {
+            'dropout_ratio': 0.5,
+        },
+    },
+    {
+        'name': 'ip3_note',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': '{{bias_lr_mult}}'},
+            ],
+            'num_output': '{{ip3_note_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': '{{ip_bias_constant}}',
+            },
+        },
+    },
+    {
+        'name': 'ip3_time',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': '{{bias_lr_mult}}'},
+            ],
+            'num_output': '{{ip3_time_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': '{{ip_bias_constant}}',
+            },
+        },
+    },
+    {
+        'name': 'ip3_duration',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': '{{bias_lr_mult}}'},
+            ],
+            'num_output': '{{ip3_duration_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': '{{ip_bias_constant}}',
+            },
+        },
+    },
+    {
+        'name': 'ip3_velocity',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': '{{bias_lr_mult}}'},
+            ],
+            'num_output': '{{ip3_velocity_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': '{{ip_bias_constant}}',
+            },
+        },
+    },
+    {
+        'name': 'relu6_note',
+        'type': 'ReLU',
+        'bottom': 'ip3_note',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'relu6_time',
+        'type': 'ReLU',
+        'bottom': 'ip3_time',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'relu6_duration',
+        'type': 'ReLU',
+        'bottom': 'ip3_duration',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'relu6_velocity',
+        'type': 'ReLU',
+        'bottom': 'ip3_velocity',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'ip4_note',
+        'type': 'InnerProduct',
+        'bottom': 'relu6_note',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -440,9 +549,9 @@ layerTemplates = [
         },
     },
     {
-        'name': 'ip2_time',
+        'name': 'ip4_time',
         'type': 'InnerProduct',
-        'bottom': 'relu6',
+        'bottom': 'relu6_time',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -459,9 +568,9 @@ layerTemplates = [
         },
     },
     {
-        'name': 'ip2_duration',
+        'name': 'ip4_duration',
         'type': 'InnerProduct',
-        'bottom': 'relu7',
+        'bottom': 'relu6_duration',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -478,9 +587,9 @@ layerTemplates = [
         },
     },
     {
-        'name': 'ip2_velocity',
+        'name': 'ip4_velocity',
         'type': 'InnerProduct',
-        'bottom': 'relu8',
+        'bottom': 'relu6_velocity',
         'args': {
             'param': [
                 {'lr_mult': 1},
@@ -500,7 +609,7 @@ layerTemplates = [
         'name': 'loss_note',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip2_note',
+            'ip4_note',
             'notes',
         ],
     },
@@ -508,7 +617,7 @@ layerTemplates = [
         'name': 'loss_time',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip2_time',
+            'ip4_time',
             'times',
         ],
     },
@@ -516,7 +625,7 @@ layerTemplates = [
         'name': 'loss_duration',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip2_duration',
+            'ip4_duration',
             'durations',
         ],
     },
@@ -524,7 +633,7 @@ layerTemplates = [
         'name': 'loss_velocity',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip2_velocity',
+            'ip4_velocity',
             'velocities',
         ],
     },
@@ -578,13 +687,18 @@ def genValues(paramTemplates):
 
 def subValues(d, paramValues, phase):
     if type(d) is str:
-        m = re.search('{{(.*)}}', d)
-        if m:
-            if m.group(1).strip() == 'phase':
-                return d[:m.start()] + phase + d[m.end():]
+        while True:
+            m = re.search('{{(.*?)}}', d)
+            if m:
+                if m.group(1).strip() == 'phase':
+                    d = d[:m.start()] + phase + d[m.end():]
+                else:
+                    d = d[:m.start()] + str(paramValues[m.group(1).strip()]) + d[m.end():]
             else:
-                return paramValues[m.group(1).strip()]
-        else:
+                break
+        try:
+            return eval(d)
+        except (NameError, SyntaxError):
             return d
     elif type(d) is dict:
         ret = {}
@@ -629,9 +743,9 @@ def fitPoly(data, degree=2):
     w = linalg.lstsq(A.T, data)[0]
     #y = w[0]*xi3 + w[1]*xi2 + w[2]*xi + w[3]
     y = w[0]*xi2 + w[1]*xi + w[2]
-    return (xi, y, w)
+    return (w, xi, y)
 
-def runSolver(n):
+def newSolver(n):
     global paramTemplates, layerTemplates, solverTemplate, timePrefix, outDir, nets
     netFiles = {
         'train': timePrefix + '-train-' + str(n) + '.prototxt',
@@ -647,12 +761,12 @@ def runSolver(n):
     solverDef = solverTemplate
     solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
     solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
-    solverDef = solverDef.replace('{{snapshot_int}}', '100')
+    solverDef = solverDef.replace('{{snapshot_int}}', '1000')
     solverDef = solverDef.replace('{{snapshot_prefix}}', path.join(outDir, 'snapshots', timePrefix + '-' + str(n)))
     solverDef = genSolver(solverDef, paramValues)
     with open(path.join(outDir, solverFile), 'w') as f:
         f.write(solverDef)
-    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '100', '10'], stdout=subprocess.PIPE)
+    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '250', '50'], stdout=subprocess.PIPE)
     out = p.stdout.read()
 
     try:
@@ -661,19 +775,18 @@ def runSolver(n):
         unp = array((float('nan'), float('nan')))
 
     if p.poll() == 0 and isfinite(unp[0].sum()) and isfinite(unp[1].sum()):
-        print unp[1]
-        (xi, y, w) = fitPoly(unp[1].sum(1))
+        (w, xi, y) = fitPoly(unp[0].sum(1))
         staX = w[1] / (-2 * w[0])
         staY = ((w[0] * staX) + w[1]) * staX + w[2]
-        plt.plot(xi, unp[1].sum(1), xi, y)
+        plt.plot(range(unp[0].sum(1).shape[0]), unp[0].sum(1), xi, y)
         plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
         plt.clf()
-        nets.append((solverFile, w, y, staX, staY))
+        nets.append((solverFile, w, y, staX, staY, unp))
         with open(path.join(outDir, timePrefix + '-nets'), 'w') as f:
             f.write(pickle.dumps(nets))
-        shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
-        shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
-        shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
+        #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
+        #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
+        #shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
     else:
         #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'nogood', netFiles['train']))
         #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'nogood', netFiles['test']))
@@ -682,43 +795,45 @@ def runSolver(n):
         remove(path.join(outDir, netFiles['test']))
         remove(path.join(outDir, solverFile))
 
-nets = []
-timePrefix = time.strftime('%Y%b%d-%H:%M')
-#trainFiles = glob.glob(path.join(outDir, 'good', '*train*'))
-#testFiles = glob.glob(path.join(outDir, 'good', '*test*'))
-#for pair in zip(trainFiles, testFiles):
-#    trainM = re.match('(.*?)-train-(\d+).prototxt', pair[0])
-#    testM = re.match('(.*?)-test-(\d+).prototxt', pair[1])
-#    trainNet = caffe.Net(pair[0], path.join(outDir, 'snapshots', path.basename(trainM.group(1)) + '-' + trainM.group(2) + '_iter_25.caffemodel'), caffe.TRAIN)
-#    testNet = caffe.Net(pair[1], path.join(outDir, 'snapshots', path.basename(testM.group(1)) + '-' + testM.group(2) + '_iter_25.caffemodel'), caffe.TEST)
-#    testNet.forward(start = 'Convolution1')
-#    print dir(trainNet)
-#    print testNet.blobs['SoftmaxWithLoss1'].data
-#    print testNet.blobs['SoftmaxWithLoss2'].data
-#    print testNet.blobs['SoftmaxWithLoss3'].data
-#    print testNet.blobs['SoftmaxWithLoss4'].data
-#    for i in range(25):
-#        trainNet.step(1)
-#    testNet.forward('Convolution1')
-#    print testNet.blobs['SoftmaxWithLoss1'].data
-#    print testNet.blobs['SoftmaxWithLoss2'].data
-#    print testNet.blobs['SoftmaxWithLoss3'].data
-#    print testNet.blobs['SoftmaxWithLoss4'].data
-#    break
-solverFiles = glob.glob(path.join(outDir, 'good', '*solver*'))
-for solverFile in solverFiles:
-    m = re.match('(.*?)-solver-(\d+).prototxt', solverFile)
-    snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_100.solverstate')
-    solver = caffe.SGDSolver(solverFile)
-    print dir(solver)
-    solver.restore(snapshot)
-    solver.step(100)
-    break
-#while True:
-#    if len(nets) < maxNets:
-#        print len(nets)
-#        runSolver(len(nets))
-#    if len(nets) >= maxNets:
-#        break
+# just run solvers
+#solverFiles = glob.glob(path.join(outDir, 'good', '*solver*'))
+#for solverFile in solverFiles:
+#    print solverFile
+#    m = re.match('(.*?)-solver-(\d+).prototxt', solverFile)
+#    snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_100.solverstate')
+#    solver = caffe.SGDSolver(solverFile)
+#    print dir(solver)
+#    solver.restore(snapshot)
+#    solver.step(3000)
+#    del solver
 
-#nets.sort(lambda a, b: cmp(a[1], b[1]))
+# restore a net and get output
+#netFiles = glob.glob(path.join(outDir, 'good', '*test*'))
+#for netFile in netFiles:
+#    print netFile
+#    m = re.match('(.*?)-test-(\d+).prototxt', netFile)
+#    loss = []
+#    for step in ['1000', '2000', '3000']:
+#        print step
+#        snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_' + step + '.caffemodel')
+#        net = caffe.Net(netFile, snapshot, caffe.TEST)
+#        net.forward()
+#        loss.append((
+#            net.blobs['SoftmaxWithLoss1'].data,
+#            net.blobs['SoftmaxWithLoss2'].data,
+#            net.blobs['SoftmaxWithLoss3'].data,
+#            net.blobs['SoftmaxWithLoss4'].data,
+#        ))
+#        del net
+#    print loss
+#    plt.plot(loss)
+#    plt.savefig(path.join(outDir, 'plot', '3000', path.basename(solverFile) + '.loss.png'))
+#    plt.clf()
+
+# make new nets
+while True:
+    if len(nets) < maxNets:
+        print len(nets)
+        newSolver(len(nets))
+    if len(nets) >= maxNets:
+        break
