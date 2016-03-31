@@ -6,23 +6,13 @@ var path = require('path');
 var Promise = require('bluebird');
 
 var trainTest = 'test';
-var genStart = 5;
-var genEnd = null;
-var genIter = 1;
+var maxPoints = 100;
 var makeImages = true;
-//var genStart = 200;
-//var genEnd = 210;
-//var genIter = 1;
-//var makeImages = true;
-
 var makeMongo = false;
-var fullBright = true;
 var bpp = 3; // bytes per pixel
-var excludeTrainNote = false;
-//var vScale = 1;
-var rows = 128;//(highN - lowN + 1 + padB + padT) * vScale; // vScale sub-semitones per MIDI note
+var fullBright = true;
+var rows = 128;
 var cols = 512;
-var idxOffset = genStart;
 
 var fileIn = process.argv[2];
 var melodyFile =   path.join(path.dirname(fileIn), path.basename(fileIn, '.mid') + '.melodies');
@@ -49,7 +39,8 @@ var colors = [
     [0, 0, 0xff],
     [0xff, 0, 0xff],
     [0, 0xff, 0xff],
-    [127, 127, 127],
+    [64, 64, 64],
+    [128, 128, 128],
 ];
 var melodies;
 
@@ -248,27 +239,60 @@ fs.readFile(fileIn, function(err, data) {
         return min;
     }
 
-    function generateTrainingPoints(leftLimitT, rightLimitT) {
+    function generateTrainingPoints(leftLimitT, rightLimitT, genMax) {
         var c = melodies;
 
         // build training set
-        var trainType = Math.floor(Math.random() * 2);
         var resScale = minResScale * (1 + Math.random());
         var timeWidth = cols / resScale;
-        if (trainType === 0) {
-            var leftImgT = leftLimitT - (Math.random() * 0.6 + 0.2) * (timeWidth - rightLimitT + leftLimitT);
-        } else {
-            var leftImgT = leftLimitT - (Math.random() * 0.3 + 0.5) * (timeWidth - rightLimitT + leftLimitT);
-        }
+        var leftImgT = leftLimitT - (Math.random() * 0.6 + 0.2) * (timeWidth - rightLimitT + leftLimitT);
         var rightImgT = leftImgT + timeWidth;
         var incompleteMelodies = [];
         for (var i = 0; i < c.length; i++) {
             incompleteMelodies.push(i);
         }
-        var incompleteMelodies = shuffleArray(incompleteMelodies).slice(0, Math.round(Math.random() * (incompleteMelodies.length - 1) + 1));
+        incompleteMelodies = shuffleArray(incompleteMelodies).slice(0, Math.round(Math.random() * (incompleteMelodies.length - 1) + 1));
+        var withheldNotes = [];
+        var removedNotes = [];
+        for (var i = 0; i < c.length; i++) {
+            if (incompleteMelodies.indexOf(i) !== -1) {
+                var someWithheld = [];
+                var trimmedLeft = Math.random() < 0.5;
+                var trimmedRight = Math.random() < 0.5;
+                for (var j = 0; j < c[i].length; j++) {
+                    var note = track.notes[c[i][j]];
+                    if (note.t < leftLimitT && trimmedLeft) {
+                        removedNotes.push(c[i][j]);
+                    } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT) {
+                        someWithheld.push(c[i][j]);
+                    } else if (rightLimitT < note.t + note.d && trimmedRight) {
+                        removedNotes.push(c[i][j]);
+                    }
+                }
+                someWithheld = shuffleArray(someWithheld);
+                var sliceEnd = Math.min(Math.round(Math.random() * (someWithheld.length - 1) + 1), genMax - withheldNotes.length);
+                Array.prototype.push.apply(withheldNotes, someWithheld.slice(0, sliceEnd));
+            }
+        }
+        withheldNotes.sort(function(a, b) {
+            var noteA = track.notes[a];
+            var noteB = track.notes[b];
+            if (noteA.t < noteB.t) {
+                return -1;
+            } else if (noteB.t < noteA.t) {
+                return 1;
+            } else {
+                if (noteA.n < noteB.n) {
+                    return 1;
+                } else if (noteB.n < noteA.n) {
+                    return -1;
+                } else {
+                    return 0;
+                }
+            }
+        });
 
         var trainNotes = [];
-        var withheldNotes = [];
         var lowN = 127;
         var highN = 0;
         for (var i = 0; i < track.notes.length; i++) {
@@ -280,28 +304,23 @@ fs.readFile(fileIn, function(err, data) {
                 }
             }
             if (
-                (leftImgT < note.t && note.t + note.d < rightImgT) // inside image
-                && (trainType === 0 || note.t < rightLimitT)
+                leftImgT < note.t && note.t + note.d < rightImgT // inside image
+                && withheldNotes.indexOf(i) === -1
+                && removedNotes.indexOf(i) === -1
             ) {
-                if ( // random exclusion
-                    incompleteMelodies.indexOf(noteMelody) === -1 // in complete melody
-                    || note.t < leftLimitT // outside training time range
-                    || rightLimitT < note.t + note.d
-                    || (withheldNotes.length > 0 && Math.random() < 0.5) // lucky
-                ) {
+                trainNotes.push(i);
+            } else {
+                if (bpp === 3) { // XXX for debugging
                     trainNotes.push(i);
-                } else {
-                    trainNotes.push(i);// XXX
-                    withheldNotes.push(i);
-                    lowN = note.n < lowN ? note.n : lowN;
-                    highN = highN < note.n ? note.n : highN;
                 }
+                lowN = note.n < lowN ? note.n : lowN;
+                highN = highN < note.n ? note.n : highN;
             }
         }
         lowN -= Math.round(Math.random() * 3 + 2);
         highN += Math.round(Math.random() * 3 + 2);
 
-        function drawNote(i, buf) {
+        function drawNote(i, buf, debug) {
             var note = track.notes[i];
             var lc = Math.round((note.t - leftImgT) * resScale);
             var uc = Math.round((note.t + note.d - leftImgT) * resScale);
@@ -313,8 +332,10 @@ fs.readFile(fileIn, function(err, data) {
                     for (var k = 0; k < bpp; k++) {
                         idx = ((rows - note.n - 1) * cols + j) * bpp + k;
 
-                        if (withheldNotes.indexOf(i) !== -1) {
+                        if (removedNotes.indexOf(i) !== -1) {
                             buf[idx] = colors[6][k];
+                        } else if (withheldNotes.indexOf(i) !== -1) {
+                            buf[idx] = colors[7][k];
                         } else {
                             for (var l = 0; l < c.length; l++) {
                                 if (c[l].indexOf(i) !== -1) {
@@ -363,27 +384,30 @@ fs.readFile(fileIn, function(err, data) {
         var trainPoints = [];
         while (i = withheldNotes.shift()) {
             var note = track.notes[i];
-            var thisBuf = new Buffer(imageBuf);
-            trainPoints.push({
-                image: thisBuf,
-                note: note.n,
-                time: (note.t - leftLimitT) * resScale,
-                duration: note.d * resScale,
-                velocity: Math.floor(note.v / 8),
-                rows: rows,
-                cols: cols,
-                bpp: bpp,
-            });
-            drawNote(i, imageBuf);
+            (function() {
+                var thisBuf = new Buffer(imageBuf);
+                trainPoints.push({
+                    image: thisBuf,
+                    note: note.n,
+                    time: (note.t - leftLimitT) * resScale,
+                    duration: note.d * resScale,
+                    velocity: Math.floor(note.v / 8),
+                    rows: rows,
+                    cols: cols,
+                    bpp: bpp,
+                });
+            })();
+            drawNote(i, imageBuf, true);
         }
 
         return trainPoints;
     }
 
-    var childProto = {
-        children: [],
-        data: ['', '', '', '', ''],
-        spawn: function() {
+    var ProtobufChild = function(trainPoint) {
+        this.trainPoint = trainPoint;
+        this.children = [];
+        this.data = ['', '', '', '', ''];
+        this.spawn = function() {
             var self = this;
             var trainPoint = self.trainPoint;
             return new Promise(function(resolve, reject) {
@@ -428,49 +452,26 @@ fs.readFile(fileIn, function(err, data) {
                     resolve(self.data);
                 });
             });
-        },
+        };
     }
 
-    var scheduler = function(trainPoints) {
+    var Scheduler = function(trainPoints) {
         this.trainPoints = trainPoints;
-        this.go = function() {
-            var self = this;
-            var trainPoint = self.trainPoints.shift();
+        this.next = function() {
+            var trainPoint = this.trainPoints.shift();
             if (trainPoint === undefined) {
-                fs.appendFile(imageFile,    'tr.commit()\nenv.close()');
-                fs.appendFile(noteFile,     'tr.commit()\nenv.close()');
-                fs.appendFile(timeFile,     'tr.commit()\nenv.close()');
-                fs.appendFile(durationFile, 'tr.commit()\nenv.close()');
-                fs.appendFile(velocityFile, 'tr.commit()\nenv.close()');
-                return;
+                return false;
+            } else {
+                this.child = new ProtobufChild(trainPoint);
+                return true;
             }
-            var task = Object.create(childProto, {
-                trainPoint: {
-                    writable: true, configurable: true, value: trainPoint,
-                },
-            });
-            task.spawn().then(function(data) {
+        }
+        this.go = function(callback) {
+            this.child.spawn().then(function(data) {
                 new Promise(function(resolve, reject) {
                     var tasks = [
                         new Promise(function(resolve, reject) {
                             fs.appendFile(imageFile,    'tr.put(str(pre + ' + dbIdx + '),\'' + data[0] + '\')\n', resolve);
-                            ////////////////////////
-                            // generate png image //
-                            ////////////////////////
-                            if (makeImages) {
-                                if (task.trainPoint.bpp === 3) {
-                                    var png = new Png(task.trainPoint.image, task.trainPoint.cols, task.trainPoint.rows, 'rgb');
-                                } else {
-                                    var png = new Png(task.trainPoint.image, task.trainPoint.cols, task.trainPoint.rows, 'gray', 8);
-                                }
-                                (function() {
-                                    var fileName = path.join(__dirname, '/images/', path.basename(fileIn, '.mid') + '.' + dbIdx + '.png');
-                                    png.encode(function(image) {
-                                        fs.writeFileSync(fileName, image);
-                                    });
-                                })();
-                            }
-                            ////////////////////////
                         }),
                         new Promise(function(resolve, reject) {
                             fs.appendFile(noteFile,     'tr.put(str(pre + ' + dbIdx + '),\'' + data[1] + '\')\n', resolve);
@@ -490,15 +491,52 @@ fs.readFile(fileIn, function(err, data) {
                         resolve();
                     });
                 }).then(function() {
-                    self.go();
+                    callback();
+                    //self.go();
                 });
             });
         }
     }
 
-    var trainPoints = generateTrainingPoints(track.notes[200].t, track.notes[220].t);
-    var scheduler = new scheduler(trainPoints);
-    scheduler.go();
+    var trainPoints = [];
+    while (trainPoints.length < maxPoints) {
+        var widthT = Math.floor(Math.random() * ticksPerBeat * 16);
+        var leftLimitT = Math.floor(Math.random() * (track.lastNoteEnd - widthT));
+        var thisPoints = generateTrainingPoints(leftLimitT, leftLimitT + widthT, maxPoints - trainPoints.length);
+        Array.prototype.push.apply(trainPoints, thisPoints);
+    }
+    ////////////////////////
+    // generate png image //
+    ////////////////////////
+    if (makeImages) {
+        for (var i = 0; i < trainPoints.length; i++) {
+            if (bpp === 3) {
+                var png = new Png(trainPoints[i].image, cols, rows, 'rgb');
+            } else {
+                var png = new Png(trainPoints[i].image, cols, rows, 'gray', 8);
+            }
+            (function() {
+                var fileName = path.join(__dirname, '/images/', path.basename(fileIn, '.mid') + '.' + i + '.png');
+                png.encode(function(image) {
+                    fs.writeFileSync(fileName, image);
+                });
+            })();
+        }
+    }
+    ////////////////////////
+    var scheduler = new Scheduler(trainPoints);
+    function scheduleNext() {
+        if (scheduler.next()) {
+            scheduler.go(scheduleNext);
+        } else {
+            fs.appendFile(imageFile,    'tr.commit()\nenv.close()');
+            fs.appendFile(noteFile,     'tr.commit()\nenv.close()');
+            fs.appendFile(timeFile,     'tr.commit()\nenv.close()');
+            fs.appendFile(durationFile, 'tr.commit()\nenv.close()');
+            fs.appendFile(velocityFile, 'tr.commit()\nenv.close()');
+        }
+    }
+    scheduleNext();
 
     if (makeMongo) {
         var dbIn = {
