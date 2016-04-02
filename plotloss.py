@@ -27,11 +27,14 @@ if __name__ == '__main__':
     #for solverFile in solverFiles:
     #    print solverFile
     inFile = sys.argv[1]
-    #data = array(((1, 6.1, 9.2, 15.8, 25, 36, 49), (7, 3, 2, 7, 4, 2, 4)))
-    #w = fitPoly(data)
-    #print w
+    #idx = int(sys.argv[2])
     with open(inFile) as f:
         e = pickle.loads(f.read())
+
+    #e.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
+    #for t in e:
+    #    print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])
+
     w = zeros(e.shape[1])
     for i in range(e.shape[1]):
         print fitPoly(e[:,i])[0]

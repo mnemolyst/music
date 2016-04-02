@@ -172,7 +172,7 @@ paramTemplates = {
     },
     'lr_momentum': {
         'type': 'real',
-        'min': 0.7,
+        'min': 0.75,
         'max': 0.95,
     },
     'weight_decay': {
@@ -236,16 +236,16 @@ layerTemplates = [
             'backend': P.Data.LMDB,
         },
     },
-    {
-        'name': 'velocities',
-        'type': 'Data',
-        'args': {
-            'ntop': 1,
-            'source': path.join(lmdbDir, '{{phase}}/velocities'),
-            'batch_size': 20,
-            'backend': P.Data.LMDB,
-        },
-    },
+    #{
+    #    'name': 'velocities',
+    #    'type': 'Data',
+    #    'args': {
+    #        'ntop': 1,
+    #        'source': path.join(lmdbDir, '{{phase}}/velocities'),
+    #        'batch_size': 20,
+    #        'backend': P.Data.LMDB,
+    #    },
+    #},
     {
         'name': 'conv1',
         'type': 'Convolution',
@@ -478,25 +478,25 @@ layerTemplates = [
             },
         },
     },
-    {
-        'name': 'ip3_velocity',
-        'type': 'InnerProduct',
-        'bottom': 'dropout2',
-        'args': {
-            'param': [
-                {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
-            ],
-            'num_output': '{{ip3_velocity_num_output}}',
-            'weight_filler': {
-                'type': 'xavier',
-            },
-            'bias_filler': {
-                'type': 'constant',
-                'value': '{{ip_bias_constant}}',
-            },
-        },
-    },
+    #{
+    #    'name': 'ip3_velocity',
+    #    'type': 'InnerProduct',
+    #    'bottom': 'dropout2',
+    #    'args': {
+    #        'param': [
+    #            {'lr_mult': 1},
+    #            {'lr_mult': '{{bias_lr_mult}}'},
+    #        ],
+    #        'num_output': '{{ip3_velocity_num_output}}',
+    #        'weight_filler': {
+    #            'type': 'xavier',
+    #        },
+    #        'bias_filler': {
+    #            'type': 'constant',
+    #            'value': '{{ip_bias_constant}}',
+    #        },
+    #    },
+    #},
     {
         'name': 'relu6_note',
         'type': 'ReLU',
@@ -521,14 +521,14 @@ layerTemplates = [
             'in_place': True,
         },
     },
-    {
-        'name': 'relu6_velocity',
-        'type': 'ReLU',
-        'bottom': 'ip3_velocity',
-        'args': {
-            'in_place': True,
-        },
-    },
+    #{
+    #    'name': 'relu6_velocity',
+    #    'type': 'ReLU',
+    #    'bottom': 'ip3_velocity',
+    #    'args': {
+    #        'in_place': True,
+    #    },
+    #},
     {
         'name': 'ip4_note',
         'type': 'InnerProduct',
@@ -557,7 +557,7 @@ layerTemplates = [
                 {'lr_mult': 1},
                 {'lr_mult': '{{bias_lr_mult}}'},
             ],
-            'num_output': 64,
+            'num_output': 512,
             'weight_filler': {
                 'type': 'xavier',
             },
@@ -576,7 +576,7 @@ layerTemplates = [
                 {'lr_mult': 1},
                 {'lr_mult': '{{bias_lr_mult}}'},
             ],
-            'num_output': 64,
+            'num_output': 256,
             'weight_filler': {
                 'type': 'xavier',
             },
@@ -586,25 +586,25 @@ layerTemplates = [
             },
         },
     },
-    {
-        'name': 'ip4_velocity',
-        'type': 'InnerProduct',
-        'bottom': 'relu6_velocity',
-        'args': {
-            'param': [
-                {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
-            ],
-            'num_output': 16,
-            'weight_filler': {
-                'type': 'xavier',
-            },
-            'bias_filler': {
-                'type': 'constant',
-                'value': '{{ip_bias_constant}}',
-            },
-        },
-    },
+    #{
+    #    'name': 'ip4_velocity',
+    #    'type': 'InnerProduct',
+    #    'bottom': 'relu6_velocity',
+    #    'args': {
+    #        'param': [
+    #            {'lr_mult': 1},
+    #            {'lr_mult': '{{bias_lr_mult}}'},
+    #        ],
+    #        'num_output': 16,
+    #        'weight_filler': {
+    #            'type': 'xavier',
+    #        },
+    #        'bias_filler': {
+    #            'type': 'constant',
+    #            'value': '{{ip_bias_constant}}',
+    #        },
+    #    },
+    #},
     {
         'name': 'loss_note',
         'type': 'SoftmaxWithLoss',
@@ -629,14 +629,55 @@ layerTemplates = [
             'durations',
         ],
     },
+    #{
+    #    'name': 'loss_velocity',
+    #    'type': 'SoftmaxWithLoss',
+    #    'bottom': [
+    #        'ip4_velocity',
+    #        'velocities',
+    #    ],
+    #},
     {
-        'name': 'loss_velocity',
-        'type': 'SoftmaxWithLoss',
+        'name': 'accuracy_note',
+        'type': 'Accuracy',
         'bottom': [
-            'ip4_velocity',
-            'velocities',
+            'ip4_note',
+            'notes',
         ],
+        'args': {
+            'top_k': 5,
+        },
     },
+    {
+        'name': 'accuracy_time',
+        'type': 'Accuracy',
+        'bottom': [
+            'ip4_time',
+            'times',
+        ],
+        'args': {
+            'top_k': 5,
+        },
+    },
+    {
+        'name': 'accuracy_duration',
+        'type': 'Accuracy',
+        'bottom': [
+            'ip4_duration',
+            'durations',
+        ],
+        'args': {
+            'top_k': 5,
+        },
+    },
+    #{
+    #    'name': 'accuracy_velocity',
+    #    'type': 'SoftmaxWithLoss',
+    #    'bottom': [
+    #        'ip4_velocity',
+    #        'velocities',
+    #    ],
+    #},
 ]
 
 solverTemplate = """
@@ -645,13 +686,13 @@ test_net: '{{test_net}}'
 test_iter: 1
 test_interval: 10000
 # The base learning rate, momentum and the weight decay of the network.
-base_lr: {{base_lr}}
-momentum: {{lr_momentum}}
-weight_decay: {{weight_decay}}
+base_lr: 0.0005
+momentum: 0.9
+weight_decay: 0.0005
 # The learning rate policy
 lr_policy: "inv"
-gamma: {{lr_gamma}}
-power: {{lr_power}}
+gamma: 0.0001
+power: 0.75
 # Display every 100 iterations
 #display: 100
 # The maximum number of iterations
@@ -757,7 +798,8 @@ def newSolver(n):
         layerDefs = subValues(layerTemplates, paramValues, phase)
         net = genNet(layerDefs)
         with open(path.join(outDir, netFiles[phase]), 'w') as f:
-            f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
+            #f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
+            f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.accuracy_note, net.accuracy_time, net.accuracy_duration)))
     solverDef = solverTemplate
     solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
     solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
@@ -766,7 +808,7 @@ def newSolver(n):
     solverDef = genSolver(solverDef, paramValues)
     with open(path.join(outDir, solverFile), 'w') as f:
         f.write(solverDef)
-    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '250', '50'], stdout=subprocess.PIPE)
+    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '100', '25'], stdout=subprocess.PIPE)
     out = p.stdout.read()
 
     try:
@@ -781,7 +823,7 @@ def newSolver(n):
         plt.plot(range(unp[0].sum(1).shape[0]), unp[0].sum(1), xi, y)
         plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
         plt.clf()
-        nets.append((solverFile, w, y, staX, staY, unp))
+        nets.append((solverFile, paramValues, unp))
         with open(path.join(outDir, timePrefix + '-nets'), 'w') as f:
             f.write(pickle.dumps(nets))
         #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
@@ -822,7 +864,7 @@ def newSolver(n):
 #            net.blobs['SoftmaxWithLoss1'].data,
 #            net.blobs['SoftmaxWithLoss2'].data,
 #            net.blobs['SoftmaxWithLoss3'].data,
-#            net.blobs['SoftmaxWithLoss4'].data,
+#            #net.blobs['SoftmaxWithLoss4'].data,
 #        ))
 #        del net
 #    print loss

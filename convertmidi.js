@@ -5,16 +5,17 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'test';
-var maxPoints = 100;
-var makeImages = true;
+var trainTest = 'train';
+var makeImages = false;
+var makeLmdb = true;
 var makeMongo = false;
-var bpp = 3; // bytes per pixel
+var bpp = 1; // bytes per pixel
 var fullBright = true;
 var rows = 128;
 var cols = 512;
 
 var fileIn = process.argv[2];
+var maxPoints = process.argv[3] || 100;
 var melodyFile =   path.join(path.dirname(fileIn), path.basename(fileIn, '.mid') + '.melodies');
 var dbFile =       path.join(__dirname, '/db/', path.basename(fileIn, '.mid') + '.db');
 var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
@@ -257,8 +258,8 @@ fs.readFile(fileIn, function(err, data) {
         for (var i = 0; i < c.length; i++) {
             if (incompleteMelodies.indexOf(i) !== -1) {
                 var someWithheld = [];
-                var trimmedLeft = Math.random() < 0.5;
-                var trimmedRight = Math.random() < 0.5;
+                var trimmedLeft = Math.random() < 1/3;
+                var trimmedRight = (! trimmedLeft) && Math.random() < 1/2;
                 for (var j = 0; j < c[i].length; j++) {
                     var note = track.notes[c[i][j]];
                     if (note.t < leftLimitT && trimmedLeft) {
@@ -269,11 +270,16 @@ fs.readFile(fileIn, function(err, data) {
                         removedNotes.push(c[i][j]);
                     }
                 }
-                someWithheld = shuffleArray(someWithheld);
+                if (Math.random() < 0.5) {
+                    someWithheld = shuffleArray(someWithheld);
+                } else {
+                    someWithheld = someWithheld.slice(Math.round((Math.random() * someWithheld.length / 3)));
+                }
                 var sliceEnd = Math.min(Math.round(Math.random() * (someWithheld.length - 1) + 1), genMax - withheldNotes.length);
                 Array.prototype.push.apply(withheldNotes, someWithheld.slice(0, sliceEnd));
             }
         }
+        // earlier notes first, then higher pitched notes first
         withheldNotes.sort(function(a, b) {
             var noteA = track.notes[a];
             var noteB = track.notes[b];
@@ -309,7 +315,7 @@ fs.readFile(fileIn, function(err, data) {
                 && removedNotes.indexOf(i) === -1
             ) {
                 trainNotes.push(i);
-            } else {
+            } else if (withheldNotes.indexOf(i) !== -1) {
                 if (bpp === 3) { // XXX for debugging
                     trainNotes.push(i);
                 }
@@ -320,7 +326,7 @@ fs.readFile(fileIn, function(err, data) {
         lowN -= Math.round(Math.random() * 3 + 2);
         highN += Math.round(Math.random() * 3 + 2);
 
-        function drawNote(i, buf, debug) {
+        function drawNote(i, buf) {
             var note = track.notes[i];
             var lc = Math.round((note.t - leftImgT) * resScale);
             var uc = Math.round((note.t + note.d - leftImgT) * resScale);
@@ -328,56 +334,75 @@ fs.readFile(fileIn, function(err, data) {
             lc = Math.max(0, Math.min(lc, cols));
             uc = Math.max(0, Math.min(uc, cols));
             if (bpp === 3) {
+                if (removedNotes.indexOf(i) !== -1) {
+                    var cIdx = 6;
+                } else if (withheldNotes.indexOf(i) !== -1) {
+                    var cIdx = 7;
+                } else {
+                    for (var l = 0; l < c.length; l++) {
+                        if (c[l].indexOf(i) !== -1) {
+                            var cIdx = l+1;
+                        }
+                    }
+                }
                 for (var j = lc; j < uc; j++) {
                     for (var k = 0; k < bpp; k++) {
-                        idx = ((rows - note.n - 1) * cols + j) * bpp + k;
-
-                        if (removedNotes.indexOf(i) !== -1) {
-                            buf[idx] = colors[6][k];
-                        } else if (withheldNotes.indexOf(i) !== -1) {
-                            buf[idx] = colors[7][k];
-                        } else {
-                            for (var l = 0; l < c.length; l++) {
-                                if (c[l].indexOf(i) !== -1) {
-                                    buf[idx] = colors[l+1][k];
-                                }
-                            }
-                        }
+                        idx = ((rows - 1 - note.n) * cols + j) * bpp + k;
+                        buf[idx] = colors[cIdx][k];
                     }
                 }
             } else {
                 for (var j = lc; j < uc; j++) {
                     for (var k = 0; k < bpp; k++) {
-                        idx = ((rows - note.n - 1) * cols + j) * bpp + k;
+                        idx = ((rows - 1 - note.n) * cols + j) * bpp + k;
 
                         if (fullBright) {
                             buf[idx] = 255;
                         } else {
-                            buf[idx] = Math.floor(note.v * (255 / 127));
+                            buf[idx] = Math.floor(note.v + 128);
                         }
                     }
                 }
             }
         }
 
+        // new image
         var imageBuf = new Buffer(rows * cols * bpp);
         imageBuf.fill(0);
+
+        // notes
         for (var i = 0; i < trainNotes.length; i++) {
             drawNote(trainNotes[i], imageBuf);
         }
-        // training box
+
+        // grid
+        for (var i = 12; i < 128; i+=12) {
+            for (var j = 0; j < cols; j+=2) {
+                for (var k = 0; k < bpp; k++) {
+                    idx = ((rows - 1 - i) * cols + j) * bpp + k;
+                    imageBuf[idx] = Math.min(imageBuf[idx] + 32, 255);
+                }
+            }
+        }
+
+        // limit box
         var lc = Math.round((leftLimitT - leftImgT) * resScale);
         var uc = Math.round((rightLimitT - leftImgT) * resScale);
         for (var i = lowN; i <= highN; i++) {
             for (var k = 0; k < bpp; k++) {
-                imageBuf[Math.round((rows - i - 1) * cols + lc) * bpp + k] = 255;
-                imageBuf[Math.round((rows - i - 1) * cols + uc) * bpp + k] = 255;
+                var idx1 = Math.round((rows - 1 - i) * cols + lc) * bpp + k;
+                var idx2 = Math.round((rows - 1 - i) * cols + uc) * bpp + k;
+                imageBuf[idx1] = Math.min(imageBuf[idx1] + 64, 255);
+                imageBuf[idx2] = Math.min(imageBuf[idx2] + 64, 255);
             }
         }
         for (var i = lc; i < uc; i++) {
+            var zigZag = (i-lc)%2 ? 0 : (i-lc)%4 ? -1 : 1;
             for (var k = 0; k < bpp; k++) {
-                imageBuf[Math.round((rows - lowN - 1) * cols + i) * bpp + k] = 255;
-                imageBuf[Math.round((rows - highN - 1) * cols + i) * bpp + k] = 255;
+                var idx1 = Math.round((rows - 1 - lowN - zigZag) * cols + i) * bpp + k;
+                var idx2 = Math.round((rows - 1 - highN - zigZag) * cols + i) * bpp + k;
+                imageBuf[idx1] = Math.min(imageBuf[idx1] + 64, 255);
+                imageBuf[idx2] = Math.min(imageBuf[idx2] + 64, 255);
             }
         }
 
@@ -389,15 +414,17 @@ fs.readFile(fileIn, function(err, data) {
                 trainPoints.push({
                     image: thisBuf,
                     note: note.n,
-                    time: (note.t - leftLimitT) * resScale,
-                    duration: note.d * resScale,
+                    //time: (note.t - leftLimitT) * resScale,
+                    //duration: note.d * resScale,
+                    time: Math.round((note.t - leftImgT) * resScale) - Math.round((leftLimitT - leftImgT) * resScale),
+                    duration: Math.round((note.t + note.d - leftImgT) * resScale) - Math.round((note.t - leftImgT) * resScale),
                     velocity: Math.floor(note.v / 8),
                     rows: rows,
                     cols: cols,
                     bpp: bpp,
                 });
             })();
-            drawNote(i, imageBuf, true);
+            drawNote(i, imageBuf);
         }
 
         return trainPoints;
@@ -498,16 +525,15 @@ fs.readFile(fileIn, function(err, data) {
         }
     }
 
+    // generate training points
     var trainPoints = [];
     while (trainPoints.length < maxPoints) {
-        var widthT = Math.floor(Math.random() * ticksPerBeat * 16);
+        var widthT = ticksPerBeat * Math.floor(Math.random() * 12 + 4);
         var leftLimitT = Math.floor(Math.random() * (track.lastNoteEnd - widthT));
         var thisPoints = generateTrainingPoints(leftLimitT, leftLimitT + widthT, maxPoints - trainPoints.length);
         Array.prototype.push.apply(trainPoints, thisPoints);
     }
-    ////////////////////////
-    // generate png image //
-    ////////////////////////
+
     if (makeImages) {
         for (var i = 0; i < trainPoints.length; i++) {
             if (bpp === 3) {
@@ -521,23 +547,24 @@ fs.readFile(fileIn, function(err, data) {
                     fs.writeFileSync(fileName, image);
                 });
             })();
+            //console.log('i', i, 'n', trainPoints[i].note, 't', trainPoints[i].time, 'd', trainPoints[i].duration, 'v', trainPoints[i].velocity)
         }
     }
-    ////////////////////////
-    var scheduler = new Scheduler(trainPoints);
-    function scheduleNext() {
-        if (scheduler.next()) {
-            scheduler.go(scheduleNext);
-        } else {
-            fs.appendFile(imageFile,    'tr.commit()\nenv.close()');
-            fs.appendFile(noteFile,     'tr.commit()\nenv.close()');
-            fs.appendFile(timeFile,     'tr.commit()\nenv.close()');
-            fs.appendFile(durationFile, 'tr.commit()\nenv.close()');
-            fs.appendFile(velocityFile, 'tr.commit()\nenv.close()');
+    if (makeLmdb) {
+        var scheduler = new Scheduler(trainPoints);
+        function scheduleNext() {
+            if (scheduler.next()) {
+                scheduler.go(scheduleNext);
+            } else {
+                fs.appendFile(imageFile,    'tr.commit()\nenv.close()');
+                fs.appendFile(noteFile,     'tr.commit()\nenv.close()');
+                fs.appendFile(timeFile,     'tr.commit()\nenv.close()');
+                fs.appendFile(durationFile, 'tr.commit()\nenv.close()');
+                fs.appendFile(velocityFile, 'tr.commit()\nenv.close()');
+            }
         }
+        scheduleNext();
     }
-    scheduleNext();
-
     if (makeMongo) {
         var dbIn = {
             name: path.basename(fileIn, '.mid'),
