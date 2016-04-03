@@ -31,15 +31,16 @@ if __name__ == '__main__':
     with open(inFile) as f:
         e = pickle.loads(f.read())
 
-    #e.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
-    #for t in e:
-    #    print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])
-
-    w = zeros(e.shape[1])
-    for i in range(e.shape[1]):
-        print fitPoly(e[:,i])[0]
-    s = e.sum(1)
-    plt.figure(figsize=(24, 8))
-    plt.plot(e)
-    plt.plot(s)
-    plt.show()
+    if path.basename(inFile) == 'current':
+        w = zeros(e.shape[1])
+        for i in range(e.shape[1]):
+            print fitPoly(e[:,i])[0]
+        s = e.sum(1)
+        plt.figure(figsize=(24, 8))
+        plt.plot(e)
+        plt.plot(s)
+        plt.show()
+    else:
+        e.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
+        for t in e:
+            print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])

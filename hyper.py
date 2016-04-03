@@ -17,7 +17,7 @@ from caffe import params as P
 caffe.set_mode_cpu()
 outDir = path.join(sys.path[0], 'caffe', 'random')
 lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
-maxNets = 20
+maxNets = 10
 nets = []
 timePrefix = time.strftime('%Y%b%d-%H:%M')
 
@@ -808,7 +808,7 @@ def newSolver(n):
     solverDef = genSolver(solverDef, paramValues)
     with open(path.join(outDir, solverFile), 'w') as f:
         f.write(solverDef)
-    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '100', '25'], stdout=subprocess.PIPE)
+    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '500', '100'], stdout=subprocess.PIPE)
     out = p.stdout.read()
 
     try:
