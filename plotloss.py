@@ -4,7 +4,7 @@ import glob
 from numpy import zeros, isfinite, floor, ceil, arange, linalg, array, ones
 import matplotlib.pyplot as plt
 import pickle
-caffeRoot = path.join(sys.path[0], '..', 'caffe')
+caffeRoot = path.join(sys.path[0], '..')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 caffe.set_mode_cpu()
@@ -32,12 +32,13 @@ if __name__ == '__main__':
         e = pickle.loads(f.read())
 
     if path.basename(inFile) == 'current':
-        w = zeros(e.shape[1])
-        for i in range(e.shape[1]):
-            print fitPoly(e[:,i])[0]
-        s = e.sum(1)
+        trainLoss = e[0]
+        w = zeros(trainLoss.shape[1])
+        for i in range(trainLoss.shape[1]):
+            print fitPoly(trainLoss[:,i])[0]
+        s = trainLoss.sum(1)
         plt.figure(figsize=(24, 8))
-        plt.plot(e)
+        plt.plot(trainLoss)
         plt.plot(s)
         plt.show()
     else:

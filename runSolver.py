@@ -3,15 +3,17 @@ import pickle
 import lmdb
 from os import path
 from numpy import zeros, isfinite, floor, ceil
-caffeRoot = path.join(sys.path[0], '..', 'caffe')
+caffeRoot = path.join(sys.path[0], '..')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 caffe.set_mode_cpu()
-lmdbDir = path.join(sys.path[0], 'caffe', 'lmdb')
+lmdbDir = path.join(sys.path[0], 'lmdb')
 losses = ['SoftmaxWithLoss1', 'SoftmaxWithLoss2', 'SoftmaxWithLoss3']#, 'SoftmaxWithLoss4']
 
-def runSolver(solverFile, numIter, testInterval, testCount):
+def runSolver(solverFile, snapshot, numIter, testInterval, testCount):
     solver = caffe.SGDSolver(solverFile)
+    if snapshot:
+        solver.restore(snapshot) # FIXME maybe
     trainLoss = zeros((numIter, len(losses)))
     testLoss = zeros((ceil(float(numIter) / testInterval), len(losses)))
     accuracy = zeros((ceil(float(numIter) / testInterval), len(losses)))
@@ -23,8 +25,6 @@ def runSolver(solverFile, numIter, testInterval, testCount):
             solver.net.blobs['SoftmaxWithLoss3'].data,
             #solver.net.blobs['SoftmaxWithLoss4'].data,
         )
-        with open(path.join(sys.path[0], 'caffe', 'random', 'current'), 'w') as f:
-            f.write(pickle.dumps(trainLoss))
         if not isfinite(trainLoss[it].sum()):
             raise ArithmeticError
         if it % testInterval == 0:
@@ -48,21 +48,33 @@ def runSolver(solverFile, numIter, testInterval, testCount):
             accuracy[idx] /= testIter
             if not isfinite(testLoss[idx].sum()):
                 raise ArithmeticError
+        with open(path.join(sys.path[0], 'random', 'current'), 'w') as f:
+            f.write(pickle.dumps((trainLoss, testLoss, accuracy)))
     return (trainLoss, testLoss, accuracy)
 
 if __name__ == '__main__':
-    solverFile = sys.argv[1]
-    numIter = int(sys.argv[2])
-    testInterval = int(sys.argv[3])
-    env = lmdb.open('caffe/lmdb/test/images')
+    solverFile = None
+    snapshot = None
+    numIter = None
+    testInterval = None
+    for i in range(len(sys.argv)):
+        if sys.argv[i] == '--solver':
+            solverFile = sys.argv[i+1]
+        elif sys.argv[i] == '--snapshot':
+            snapshot = sys.argv[i+1]
+        elif sys.argv[i] == '--iter':
+            numIter = int(sys.argv[i+1])
+        elif sys.argv[i] == '--testint':
+            testInterval = int(sys.argv[i+1])
+    env = lmdb.open('lmdb/test/images')
     testCount = env.stat()['entries']
     env.close()
     for db in ['train/images', 'train/notes', 'train/times', 'train/durations', 'train/velocities', 'test/images', 'test/notes', 'test/times', 'test/durations', 'test/velocities']:
-        env = lmdb.open('caffe/lmdb/' + db)
+        env = lmdb.open('lmdb/' + db)
         env.reader_check()
         env.close()
     try:
-        (trainLoss, testLoss, accuracy) = runSolver(solverFile, numIter, testInterval, testCount)
+        (trainLoss, testLoss, accuracy) = runSolver(solverFile, snapshot, numIter, testInterval, testCount)
     except Exception as err:
         sys.stderr.write(str(err))
         raise err
