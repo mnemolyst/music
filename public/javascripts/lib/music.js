@@ -62,7 +62,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     ///////////
     var Staff = function() {
         this.timeSpacing = 15; // (px / beat)
-        this.lineSpacing = 25;
+        this.lineSpacing = 20;
         this.timeDiv = 4;
         this.paths = new Group();
         for (var i = 0; i < 15; i++) {
@@ -226,11 +226,11 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     //////////
     // Note //
     //////////
-    var Note = function(t, d, note, melody, staff) {
+    var Note = function(t, d, note, melodies, staff) {
         this.t = t; // start time
         this.d = d; // duration
         this.note = note;
-        this.melody = melody;
+        this.melodies = melodies || [];
 
         var startPoint = staff.paths.bounds.topLeft.add([staff.timeSpacing * (t - leftTime), staff.noteToY(note)]);
         this.path = new Path({
@@ -255,7 +255,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     Note.prototype.refresh = function(staff) {
         this.group.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), staff.noteToY(this.note)]);
         this.path.lastSegment.point.x = this.path.firstSegment.point.x + staff.timeSpacing * this.d;
-        if (this.melody === null) {
+        if (this.melodies === []) {
             this.path.strokeColor = 'violet';
         } else if (melodyColors.hasOwnProperty(this.melody)) {
             this.path.strokeColor = melodyColors[this.melody];
@@ -306,7 +306,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 t: this.notes[i].t,
                 d: this.notes[i].d,
                 n: this.notes[i].note,
-                m: this.notes[i].melody,
+                m: this.notes[i].melodies,
             });
         }
         return JSON.stringify(data);
@@ -376,19 +376,19 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var cursor = new Cursor(composition, staff);
 
-        function splitCursor() {
-            var melodiesAtIndicator = {};
-            for (var i = 0; i < composition.notes.length; i++) {
-                var note = composition.notes[c[i][j]];
-                if (note.t - 5 < indicatorT && indicatorT < note.t + note.d + 5) {
-                    if (! melodiesAtIndicator.hasOwnProperty(note.melody)) {
-                        melodiesAtIndicator[note.melody] = {low: note.n, high: note.n};
-                    }
-                    melodiesAtIndicator[note.melody].low = melodiesAtIndicator[note.melody].low < note.n ? melodiesAtIndicator[note.melody].low : note.n;
-                    melodiesAtIndicator[note.melody].high = melodiesAtIndicator[note.melody].high < note.n ? note.n : melodiesAtIndicator[note.melody].high;
-                }
-            }
-        }
+        //function splitCursor() {
+        //    var melodiesAtIndicator = {};
+        //    for (var i = 0; i < composition.notes.length; i++) {
+        //        var note = composition.notes[c[i][j]];
+        //        if (note.t - 5 < indicatorT && indicatorT < note.t + note.d + 5) {
+        //            if (! melodiesAtIndicator.hasOwnProperty(note.melody)) {
+        //                melodiesAtIndicator[note.melody] = {low: note.n, high: note.n};
+        //            }
+        //            melodiesAtIndicator[note.melody].low = melodiesAtIndicator[note.melody].low < note.n ? melodiesAtIndicator[note.melody].low : note.n;
+        //            melodiesAtIndicator[note.melody].high = melodiesAtIndicator[note.melody].high < note.n ? note.n : melodiesAtIndicator[note.melody].high;
+        //        }
+        //    }
+        //}
 
         $nameInput.dialog({
             autoOpen: false,
@@ -574,7 +574,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         var oldNoteD3 = oldNote.d / 3;
                         var newNotes = [];
                         for (var i = 0; i < 3; i++) {
-                            var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, oldNode.melody, staff);
+                            var newNote = new Note(oldNote.t + i * oldNoteD3, oldNoteD3, oldNote.note, oldNode.melodies, staff);
                             newNotes.push(newNote);
                         }
                         composition.notes[idx].remove();
@@ -606,15 +606,15 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 if (composition.notes[i].path.isInside(dragBox.bounds)) {
                     count++;
                     if (melodyColors.hasOwnProperty(currentMelody)) {
-                        composition.notes[i].melody = currentMelody;
+                        composition.notes[i].melodies = currentMelody;
                     } else {
-                        delete composition.notes[i].melody;
+                        delete composition.notes[i].melodies;
                     }
                 }
             }
             dragBox.remove();
             composition.refresh(staff);
-            console.log('selected', count);
+            //console.log('selected', count);
         }
 
         window.onresize = function() {
@@ -746,6 +746,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     return xhr;
                 },
                 success: function(data) {
+                    console.log('Submitted');
                     if (composition.dbId === null) {
                         composition.dbId = data;
                     }
@@ -844,16 +845,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             var c = [];
             var total = 0;
             for (var i = 0; i < composition.notes.length; i++) {
-                var melody = composition.notes[i].melody;
-                if (melody) {
-                    if (! c.hasOwnProperty(melody-1)) {
-                        c[melody-1] = [];
-                    }
+                var melodies = composition.notes[i].melodies;
+                if (melodies) {
+                    for (var j = 0; j < melodies.length; j++) {
+                        if (! c.hasOwnProperty(melodies[j]-1)) {
+                            c[melodies[j]-1] = [];
+                        }
 
-                    c[melody-1].push(i);
-                    total++;
+                        c[melodies[j]-1].push(i);
+                        total++;
+                    }
                 } else {
-                    composition.notes[i].melody = null;
+                    composition.notes[i].melodies = [];
                     console.log('nope', i);
                 }
             }
