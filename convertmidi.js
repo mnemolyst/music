@@ -36,12 +36,13 @@ var silhouetteLimit2 = 0.4;
 var colors = [
     [0xff, 0, 0],
     [0, 0xff, 0],
-    [0xff, 0xff, 0],
     [0, 0, 0xff],
+    [0xff, 0xff, 0],
     [0xff, 0, 0xff],
     [0, 0xff, 0xff],
     [64, 64, 64],
     [128, 128, 128],
+    [0xff, 0x88, 0],
 ];
 var melodies;
 
@@ -264,7 +265,7 @@ fs.readFile(fileIn, function(err, data) {
                     var note = track.notes[c[i][j]];
                     if (note.t < leftLimitT && trimmedLeft) {
                         removedNotes.push(c[i][j]);
-                    } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT) {
+                    } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT && withheldNotes.indexOf(c[i][j]) === -1) {
                         someWithheld.push(c[i][j]);
                     } else if (rightLimitT < note.t + note.d && trimmedRight) {
                         removedNotes.push(c[i][j]);
@@ -323,6 +324,7 @@ fs.readFile(fileIn, function(err, data) {
                 highN = highN < note.n ? note.n : highN;
             }
         }
+        // TODO fidget with these numbers
         lowN -= Math.round(Math.random() * 3 + 2);
         highN += Math.round(Math.random() * 3 + 2);
 
@@ -330,25 +332,24 @@ fs.readFile(fileIn, function(err, data) {
             var note = track.notes[i];
             var lc = Math.round((note.t - leftImgT) * resScale);
             var uc = Math.round((note.t + note.d - leftImgT) * resScale);
-            // TODO beforeLc, beforeUc compare to see if these are necessary
             lc = Math.max(0, Math.min(lc, cols));
             uc = Math.max(0, Math.min(uc, cols));
             if (bpp === 3) {
                 if (removedNotes.indexOf(i) !== -1) {
-                    var cIdx = 6;
+                    var color = [64, 64, 64];
                 } else if (withheldNotes.indexOf(i) !== -1) {
-                    var cIdx = 7;
+                    var color = [128, 128, 128];
                 } else {
                     for (var l = 0; l < c.length; l++) {
                         if (c[l].indexOf(i) !== -1) {
-                            var cIdx = l+1;
+                            var color = colors[l];
                         }
                     }
                 }
                 for (var j = lc; j < uc; j++) {
                     for (var k = 0; k < bpp; k++) {
                         idx = ((rows - 1 - note.n) * cols + j) * bpp + k;
-                        buf[idx] = colors[cIdx][k];
+                        buf[idx] = color[k];
                     }
                 }
             } else {

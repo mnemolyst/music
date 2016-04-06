@@ -49,8 +49,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
     var melodyColors = {
         1: 'red',
-        2: 'blue',
-        3: 'green',
+        2: 'lightgreen',
+        3: 'blue',
         4: 'yellow'
     };
     var currentMelody = 1;
@@ -255,13 +255,30 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     Note.prototype.refresh = function(staff) {
         this.group.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), staff.noteToY(this.note)]);
         this.path.lastSegment.point.x = this.path.firstSegment.point.x + staff.timeSpacing * this.d;
-        if (this.melodies === []) {
-            this.path.strokeColor = 'violet';
-        } else if (melodyColors.hasOwnProperty(this.melody)) {
-            this.path.strokeColor = melodyColors[this.melody];
-        } else {
+        if (this.melodies.length === 0) {
             this.path.strokeColor = '#999999';
+        } else {
+            var thisColors = [];
+            for (var i = 0; i < this.melodies.length; i++) {
+                if (melodyColors.hasOwnProperty(this.melodies[i])) {
+                    thisColors.push(melodyColors[this.melodies[i]]);
+                }
+            }
+            if (thisColors.length === 1) {
+                this.path.strokeColor = thisColors[0];
+            } else {
+                this.path.strokeColor = {
+                    gradient: {
+                        stops: thisColors,
+                    },
+                    origin: this.path.segments[0].point,
+                    destination: this.path.segments[1].point,
+                }
+            }
         }
+        //} else {
+        //    this.path.strokeColor = '#999999';
+        //}
         //this.text.point = this.path.lastSegment.point.clone();
     }
     Note.prototype.remove = function() {
@@ -415,12 +432,14 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         composition = new Composition(data.name, id);
                         var notes = [];
                         for (var i = 0; i < data['notes'].length; i++) {
+                            //var m = typeof(data['notes'][i].m) === 'object' ? data['notes'][i].m : typeof(data['notes'][i].m) === 'undefined' ? [] : [data['notes'][i].m];
                             var note = new Note(data['notes'][i].t, data['notes'][i].d, data['notes'][i].n, data['notes'][i].m, staff);
                             notes.push(note);
                         }
                         composition.notes = notes;
                         composition.tempo = data.tempo || 500000; // microseconds per beat
                         composition.refresh(staff);
+                        progressBar.lastSegment.point = progressBar.firstSegment.point;
                     }
                     cursor.refresh();
                 },
@@ -601,14 +620,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
 
         tool.onMouseUp = function(event) {
-            var count = 0;
+            //var count = 0;
             for (var i = 0; i < composition.notes.length; i++) {
                 if (composition.notes[i].path.isInside(dragBox.bounds)) {
-                    count++;
+                    //count++;
                     if (melodyColors.hasOwnProperty(currentMelody)) {
-                        composition.notes[i].melodies = currentMelody;
+                        if (composition.notes[i].melodies.indexOf(currentMelody) !== -1) {
+                            composition.notes[i].melodies = [currentMelody];
+                        } else {
+                            composition.notes[i].melodies.push(currentMelody);
+                        }
                     } else {
-                        delete composition.notes[i].melodies;
+                        composition.notes[i].melodies = [];
                     }
                 }
             }
@@ -624,7 +647,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             composition.refresh(staff);
             cursor.refresh();
             //sigLinks.position = staff.paths.bounds.bottomLeft.add([0, 30]);
-            compositionLinks.position = staff.paths.bounds.bottomRight.add([0, 30]);
+            compositionLinks.position = view.bounds.bottomRight.add([-30, -30]);
             downloadLink.point = view.bounds.bottomLeft.add([10, -10]);
             submitLink.point = downloadLink.bounds.topLeft.add([0, -5]);
             progressBar.position = submitLink.bounds.rightCenter.add([5, 0]);
@@ -683,7 +706,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 iterPos = iterPos.add([pt.bounds.width + 10, 0]);
             }
         }
-        compositionLinks.pivot = compositionLinks.bounds.topRight;
+        compositionLinks.pivot = compositionLinks.bounds.bottomRight;
 
         var downloadLink = new PointText({
             strokeColor: 'black',
@@ -810,7 +833,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 sources[thisSrcIdx].idx = i;
                 var startTime = composition.notes[i].t * composition.tempo;
                 var endTime = (composition.notes[i].t + composition.notes[i].d) * composition.tempo;
-                //console.log(startTime, endTime);
                 sources[thisSrcIdx].osc.frequency.setValueAtTime(440 * Math.pow(1.0594630943592953, composition.notes[i].note), startTime); // TODO make table of these values
                 sources[thisSrcIdx].gain.gain.setValueAtTime(1, startTime);
                 sources[thisSrcIdx].gain.gain.setValueAtTime(0, endTime);
@@ -865,7 +887,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
 
         $(window).trigger('resize');
-
     });
 
     return { };

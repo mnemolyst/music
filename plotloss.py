@@ -42,6 +42,8 @@ if __name__ == '__main__':
         plt.plot(s)
         plt.show()
     else:
-        e.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
-        for t in e:
+        l = e[0]
+        print l[0]
+        l.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
+        for t in l:
             print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])
