@@ -17,9 +17,11 @@ from caffe import params as P
 caffe.set_mode_cpu()
 outDir = path.join(sys.path[0], 'random')
 lmdbDir = path.join(sys.path[0], 'lmdb')
-maxNets = 10
 nets = []
 timePrefix = time.strftime('%Y%b%d-%H:%M')
+maxNets = 1
+numIter = 10
+testInt = 10
 
 paramTemplates = {
     'conv1_num_output': {
@@ -645,7 +647,7 @@ layerTemplates = [
             'notes',
         ],
         'args': {
-            'top_k': 5,
+            'top_k': 2,
         },
     },
     {
@@ -656,7 +658,7 @@ layerTemplates = [
             'times',
         ],
         'args': {
-            'top_k': 5,
+            'top_k': 3,
         },
     },
     {
@@ -667,7 +669,7 @@ layerTemplates = [
             'durations',
         ],
         'args': {
-            'top_k': 5,
+            'top_k': 3,
         },
     },
     #{
@@ -683,7 +685,7 @@ layerTemplates = [
 solverTemplate = """
 train_net: '{{train_net}}'
 test_net: '{{test_net}}'
-test_iter: 1
+test_iter: 20
 test_interval: 10000
 # The base learning rate, momentum and the weight decay of the network.
 base_lr: 0.0005
@@ -803,74 +805,33 @@ def newSolver(n):
     solverDef = solverTemplate
     solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
     solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
-    solverDef = solverDef.replace('{{snapshot_int}}', '1000')
+    solverDef = solverDef.replace('{{snapshot_int}}', str(numIter))
     solverDef = solverDef.replace('{{snapshot_prefix}}', path.join(outDir, 'snapshots', timePrefix + '-' + str(n)))
     solverDef = genSolver(solverDef, paramValues)
     with open(path.join(outDir, solverFile), 'w') as f:
         f.write(solverDef)
-    p = subprocess.Popen(['python', 'runSolver.py', path.join(outDir, solverFile), '500', '100'], stdout=subprocess.PIPE)
+    p = subprocess.Popen(['python', 'runSolver.py', '--solver', path.join(outDir, solverFile), '--iter', str(numIter), '--testint', str(testInt)], stdout=subprocess.PIPE)
     out = p.stdout.read()
 
     try:
         unp = pickle.loads(out)
     except Exception as e:
-        unp = array((float('nan'), float('nan')))
+        unp = array([float('nan'), float('nan'), float('nan')])
 
     if p.poll() == 0 and isfinite(unp[0].sum()) and isfinite(unp[1].sum()):
-        (w, xi, y) = fitPoly(unp[0].sum(1))
-        staX = w[1] / (-2 * w[0])
-        staY = ((w[0] * staX) + w[1]) * staX + w[2]
-        plt.plot(range(unp[0].sum(1).shape[0]), unp[0].sum(1), xi, y)
-        plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
-        plt.clf()
-        nets.append((solverFile, paramValues, unp))
+        #(w, xi, y) = fitPoly(unp[0].sum(1))
+        #staX = w[1] / (-2 * w[0])
+        #staY = ((w[0] * staX) + w[1]) * staX + w[2]
+        #plt.plot(range(unp[0].sum(1).shape[0]), unp[0].sum(1), xi, y)
+        #plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
+        #plt.clf()
+        nets.append([solverFile, paramValues, unp])
         with open(path.join(outDir, timePrefix + '-nets'), 'w') as f:
             f.write(pickle.dumps(nets))
-        #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'good', netFiles['train']))
-        #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'good', netFiles['test']))
-        #shutil.move(path.join(outDir, solverFile), path.join(outDir, 'good', solverFile))
     else:
-        #shutil.move(path.join(outDir, netFiles['train']), path.join(outDir, 'nogood', netFiles['train']))
-        #shutil.move(path.join(outDir, netFiles['test']), path.join(outDir, 'nogood', netFiles['test']))
-        #shutil.move(path.join(outDir, solverFile), path.join(outDir, 'nogood', solverFile))
         remove(path.join(outDir, netFiles['train']))
         remove(path.join(outDir, netFiles['test']))
         remove(path.join(outDir, solverFile))
-
-# just run solvers
-#solverFiles = glob.glob(path.join(outDir, 'good', '*solver*'))
-#for solverFile in solverFiles:
-#    print solverFile
-#    m = re.match('(.*?)-solver-(\d+).prototxt', solverFile)
-#    snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_100.solverstate')
-#    solver = caffe.SGDSolver(solverFile)
-#    print dir(solver)
-#    solver.restore(snapshot)
-#    solver.step(3000)
-#    del solver
-
-# restore a net and get output
-#netFiles = glob.glob(path.join(outDir, 'good', '*test*'))
-#for netFile in netFiles:
-#    print netFile
-#    m = re.match('(.*?)-test-(\d+).prototxt', netFile)
-#    loss = []
-#    for step in ['1000', '2000', '3000']:
-#        print step
-#        snapshot = path.join(outDir, 'snapshots', path.basename(m.group(1)) + '-' + m.group(2) + '_iter_' + step + '.caffemodel')
-#        net = caffe.Net(netFile, snapshot, caffe.TEST)
-#        net.forward()
-#        loss.append((
-#            net.blobs['SoftmaxWithLoss1'].data,
-#            net.blobs['SoftmaxWithLoss2'].data,
-#            net.blobs['SoftmaxWithLoss3'].data,
-#            #net.blobs['SoftmaxWithLoss4'].data,
-#        ))
-#        del net
-#    print loss
-#    plt.plot(loss)
-#    plt.savefig(path.join(outDir, 'plot', '3000', path.basename(solverFile) + '.loss.png'))
-#    plt.clf()
 
 # make new nets
 while True:

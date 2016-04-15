@@ -256,7 +256,13 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         this.group.position = staff.paths.bounds.topLeft.add([staff.timeSpacing * (this.t - leftTime), staff.noteToY(this.note)]);
         this.path.lastSegment.point.x = this.path.firstSegment.point.x + staff.timeSpacing * this.d;
         if (this.melodies.length === 0) {
-            this.path.strokeColor = '#999999';
+            this.path.strokeColor = {
+                gradient: {
+                    stops: ['#cccccc', '#666666', '#666666', '#cccccc'],
+                },
+                origin: this.path.segments[0].point,
+                destination: this.path.segments[1].point,
+            }
         } else {
             var thisColors = [];
             for (var i = 0; i < this.melodies.length; i++) {

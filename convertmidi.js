@@ -5,9 +5,10 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'train';
-var makeImages = false;
+var trainTest = 'test';
 var makeLmdb = true;
+var makeImages = false;
+var printPoints = false;
 var makeMongo = false;
 var bpp = 1; // bytes per pixel
 var fullBright = true;
@@ -24,11 +25,11 @@ var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.
 var durationFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.durations.py');
 var velocityFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.velocities.py');
 var dbIdx = 0;
-fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/images\',     envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
-fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/notes\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
-fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/times\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
-fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
-fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\nif c.last():\n\tlast=int(c.key())\nelse:\n\tlast=0\npre=((last-last%1000000000)/1000000000+1)*1000000000\n');
+fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/images\',     envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/notes\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/times\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
 
 var silhouetteLimit1 = 0.8;
 var silhouetteLimit2 = 0.4;
@@ -325,8 +326,8 @@ fs.readFile(fileIn, function(err, data) {
             }
         }
         // TODO fidget with these numbers
-        lowN -= Math.round(Math.random() * 3 + 2);
-        highN += Math.round(Math.random() * 3 + 2);
+        lowN -= Math.round(Math.random() * 6 + 2);
+        highN += Math.round(Math.random() * 6 + 2);
 
         function drawNote(i, buf) {
             var note = track.notes[i];
@@ -443,13 +444,17 @@ fs.readFile(fileIn, function(err, data) {
                 for (var i = 0; i < trainPoint.image.length; i++) {
                     imageProto += '\\x' + Number(trainPoint.image[i]).toString(16); // google protobuf escaped hex
                 }
+                noteProto = '\\x' + Number(trainPoint.note & 0xff).toString(16) + '\\x' + Number((trainPoint.note & 0xff00) >> 8).toString(16);
+                timeProto = '\\x' + Number(trainPoint.time & 0xff).toString(16) + '\\x' + Number((trainPoint.time & 0xff00) >> 8).toString(16);
+                durationProto = '\\x' + Number(trainPoint.duration & 0xff).toString(16) + '\\x' + Number((trainPoint.duration & 0xff00) >> 8).toString(16);
+                velocityProto = '\\x' + Number(trainPoint.velocity & 0xff).toString(16) + '\\x' + Number((trainPoint.velocity & 0xff00) >> 8).toString(16);
 
                 var prototxt = [];
                 prototxt.push('channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "' + imageProto + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.note) + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.time) + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.duration) + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + String(trainPoint.velocity) + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + noteProto + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + timeProto + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + durationProto + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + velocityProto + '"');
 
                 for (var i = 0; i < prototxt.length; i++) {
                     self.children.push(new Promise(function(resolve, reject) {
@@ -515,7 +520,10 @@ fs.readFile(fileIn, function(err, data) {
                         }),
                     ];
                     Promise.all(tasks).then(function() {
-                        console.log(dbIdx++);
+                        dbIdx++;
+                        if (dbIdx % 100 === 0) {
+                            //console.log(dbIdx);
+                        }
                         resolve();
                     });
                 }).then(function() {
@@ -548,7 +556,15 @@ fs.readFile(fileIn, function(err, data) {
                     fs.writeFileSync(fileName, image);
                 });
             })();
-            //console.log('i', i, 'n', trainPoints[i].note, 't', trainPoints[i].time, 'd', trainPoints[i].duration, 'v', trainPoints[i].velocity)
+        }
+    }
+    if (printPoints) {
+        for (var i = 0; i < trainPoints.length; i++) {
+            console.log(i);
+            console.log('note', trainPoints[i].note);
+            console.log('time', trainPoints[i].time);
+            console.log('duration', trainPoints[i].duration);
+            //console.log('velocity', trainPoints[i].velocity);
         }
     }
     if (makeLmdb) {

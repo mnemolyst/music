@@ -1,2 +1,1 @@
-a = 5;
-console.log(typeof(b));
+console.log((0xfffe & 0xff00) >> 8);

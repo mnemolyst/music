@@ -27,23 +27,38 @@ if __name__ == '__main__':
     #for solverFile in solverFiles:
     #    print solverFile
     inFile = sys.argv[1]
-    #idx = int(sys.argv[2])
     with open(inFile) as f:
         e = pickle.loads(f.read())
 
     if path.basename(inFile) == 'current':
-        trainLoss = e[0]
-        w = zeros(trainLoss.shape[1])
-        for i in range(trainLoss.shape[1]):
-            print fitPoly(trainLoss[:,i])[0]
-        s = trainLoss.sum(1)
+        max = 0
+        for p in e[:]:
+            if len(p) > max:
+                max = len(p)
         plt.figure(figsize=(24, 8))
-        plt.plot(trainLoss)
-        plt.plot(s)
+        for p in e[:]:
+            plt.plot(range(0, max, max/len(p)), p)
         plt.show()
+        #trainLoss = e[0]
+        #w = zeros(trainLoss.shape[1])
+        #for i in range(trainLoss.shape[1]):
+        #    print fitPoly(trainLoss[:,i])[0]
+        #s = trainLoss.sum(1)
+        #plt.figure(figsize=(24, 8))
+        #plt.plot(trainLoss)
+        #plt.plot(s)
+        #plt.show()
     else:
-        l = e[0]
-        print l[0]
-        l.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
-        for t in l:
-            print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])
+        for net in e:
+            max = 0
+            for p in net[2][:]:
+                if len(p) > max:
+                    max = len(p)
+            plt.figure(figsize=(24, 8))
+            for p in net[2][:]:
+                plt.plot(range(0, max, max/len(p)), p)
+            plt.show()
+        #l = e[2]
+        #l.sort(lambda a,b: cmp(sum(a[2][1][3]), sum(b[2][1][3])))
+        #for t in l:
+        #    print t[0], '\t', t[2][1][3], '\t', sum(t[2][1][3])
