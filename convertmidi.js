@@ -59,7 +59,6 @@ try {
 
 fs.readFile(fileIn, function(err, data) {
     console.log(fileIn);
-    var timeDiv = 4;
     var tsNum = null;
     var tsDen = null;
     var tempo = 0.5;
@@ -77,7 +76,6 @@ fs.readFile(fileIn, function(err, data) {
         //var noteStarted = false;
         for (var j = 0; j < midifile.tracks[i].length; j++) {
             var event = midifile.tracks[i][j];
-            //var deltaBeat = event.deltaTime / midifile.header.ticksPerBeat;
             time += event.deltaTime;
             switch (event.subtype) {
                 case 'noteOn':
