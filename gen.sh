@@ -31,7 +31,7 @@ node convertmidi.js midi/Bach/bwv791.mid 1000;
 #node convertmidi.js midi/Bach/bwv799.mid 1000;
 #node convertmidi.js midi/Bach/bwv800.mid 1000;
 #node convertmidi.js midi/Bach/bwv801.mid 1000;
-cd ~/node/caffe/music/lmdb;
+cd ../caffe/music/lmdb;
 ./load.sh;
-cd ~/node/music;
+cd ../../../music;
 done
