@@ -458,7 +458,7 @@ fs.readFile(fileIn, function(err, data) {
                     self.children.push(new Promise(function(resolve, reject) {
                         var idx = i;
                         var child = childProcess.spawn(
-                            '/usr/local/bin/protoc',
+                            'protoc',
                             ['--encode=caffe.Datum', 'caffe.proto'],
                             { cwd: path.join(__dirname, '../caffe/src/caffe/proto') }
                         );

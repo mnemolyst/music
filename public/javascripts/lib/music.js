@@ -7,7 +7,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
     var upperLeft = new Point(10, 200);
     var leftTime = 0;
-    var staff;
+    var staff, composition, cursor;
 
     //var keySignatures = {
     //    'cM':  [0, 0, 0, 0, 0, 0, 0],
@@ -381,9 +381,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     // SuggestRequest //
     ////////////////////
     var SuggestRequest = function(rect) {
-        this.path = new Path.Rectangle(rect.clone());
+        this.path = new Path(rect.segments);
         this.path.strokeColor = 'violet';
         this.path.strokeWidth = 2;
+        this.path.name = 'limits';
 
         this.go = new PointText({
             strokeColor: 'violet',
@@ -404,14 +405,18 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             pivot: this.path.bounds.topLeft,
         });
         this.go.onClick = this.submit;
+        this.cancel.onClick = function() {
+            this.parent.remove();
+        }
     }
     SuggestRequest.prototype.submit = function() {
+        var limits = this.parent.children['limits'];
+        var leftLimitT = (limits.bounds.left - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
+        var rightLimitT = (limits.bounds.right - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
+        var lowN = staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom);
+        var highN = staff.yToNote(staff.paths.bounds.top - limits.bounds.top);
+
         var notes = [];
-        var leftLimitT = (this.path.left - staff.bounds.left) / staff.timeSpacing + leftTime;
-        var rightLimitT = (this.path.right - staff.bounds.left) / staff.timeSpacing + leftTime;
-        var lowN = staff.yToNote(staff.paths.bounds.top - this.path.bottom);
-        var highN = staff.yToNote(staff.paths.bounds.top - this.path.top);
-        console.log(leftLimitT, rightLimitT, lowN, highN);
         for (var i = 0; i < composition.notes.length; i++) {
         }
         //$.ajax({
@@ -440,15 +445,13 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
     $(document).ready(function() {
         var canvas = document.getElementById('canvas');
-        var mouseMode = 'select';
+        var mouseMode = 'suggest';
         var currentRequest = null;
         paper.setup(canvas);
 
         staff = new Staff();
-
-        var composition = new Composition('Untitled');
-
-        var cursor = new Cursor(composition);
+        composition = new Composition('Untitled');
+        cursor = new Cursor(composition);
 
         $nameInput.dialog({
             autoOpen: false,
@@ -665,6 +668,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
 
         tool.onMouseUp = function(event) {
+            if (dragBox.bounds.width < 5 || dragBox.bounds.height < 5) {
+                dragBox.remove();
+                return;
+            }
             if (mouseMode == 'select') {
                 for (var i = 0; i < composition.notes.length; i++) {
                     if (composition.notes[i].path.isInside(dragBox.bounds)) {
@@ -957,7 +964,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         }
 
         var suggestLink = new PointText({
-            strokeColor: 'black',
+            strokeColor: 'red',
             fontSize: 20,
             content: 'Suggest',
         });
