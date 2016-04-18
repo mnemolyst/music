@@ -6,8 +6,8 @@ layer {
     scale: 0.00392156862745
   }
   data_param {
-    source: "/home/ubuntu/caffe/music/lmdb/test/images"
-    batch_size: 50
+    source: "/home/ubuntu/caffe/music/lmdb/train/images"
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -75,42 +75,42 @@ layer {
   bottom: "Convolution2"
   top: "Convolution2"
 }
-layer {
-  name: "Convolution3"
-  type: "Convolution"
-  bottom: "Convolution2"
-  top: "Convolution3"
-  param {
-    lr_mult: 1
-  }
-  param {
-    lr_mult: 2
-  }
-  convolution_param {
-    num_output: 100
-    weight_filler {
-      type: "xavier"
-    }
-    bias_filler {
-      type: "constant"
-      value: 0.125
-    }
-    kernel_h: 3
-    kernel_w: 12
-    stride_h: 3
-    stride_w: 3
-  }
-}
-layer {
-  name: "ReLU3"
-  type: "ReLU"
-  bottom: "Convolution3"
-  top: "Convolution3"
-}
+#layer {
+#  name: "Convolution3"
+#  type: "Convolution"
+#  bottom: "Convolution2"
+#  top: "Convolution3"
+#  param {
+#    lr_mult: 1
+#  }
+#  param {
+#    lr_mult: 2
+#  }
+#  convolution_param {
+#    num_output: 100
+#    weight_filler {
+#      type: "xavier"
+#    }
+#    bias_filler {
+#      type: "constant"
+#      value: 0.125
+#    }
+#    kernel_h: 3
+#    kernel_w: 12
+#    stride_h: 3
+#    stride_w: 3
+#  }
+#}
+#layer {
+#  name: "ReLU3"
+#  type: "ReLU"
+#  bottom: "Convolution3"
+#  top: "Convolution3"
+#}
 layer {
   name: "Pooling1"
   type: "Pooling"
-  bottom: "Convolution3"
+  bottom: "Convolution2"
   top: "Pooling1"
   pooling_param {
     pool: MAX
@@ -157,47 +157,47 @@ layer {
     dropout_ratio: 0.5
   }
 }
-layer {
-  name: "InnerProduct2"
-  type: "InnerProduct"
-  bottom: "Dropout1"
-  top: "InnerProduct2"
-  param {
-    lr_mult: 1
-  }
-  param {
-    lr_mult: 2
-  }
-  inner_product_param {
-    num_output: 200
-    weight_filler {
-      type: "xavier"
-    }
-    bias_filler {
-      type: "constant"
-      value: 1
-    }
-  }
-}
-layer {
-  name: "ReLU5"
-  type: "ReLU"
-  bottom: "InnerProduct2"
-  top: "InnerProduct2"
-}
-layer {
-  name: "Dropout2"
-  type: "Dropout"
-  bottom: "InnerProduct2"
-  top: "Dropout2"
-  dropout_param {
-    dropout_ratio: 0.5
-  }
-}
+#layer {
+#  name: "InnerProduct2"
+#  type: "InnerProduct"
+#  bottom: "Dropout1"
+#  top: "InnerProduct2"
+#  param {
+#    lr_mult: 1
+#  }
+#  param {
+#    lr_mult: 2
+#  }
+#  inner_product_param {
+#    num_output: 200
+#    weight_filler {
+#      type: "xavier"
+#    }
+#    bias_filler {
+#      type: "constant"
+#      value: 1
+#    }
+#  }
+#}
+#layer {
+#  name: "ReLU5"
+#  type: "ReLU"
+#  bottom: "InnerProduct2"
+#  top: "InnerProduct2"
+#}
+#layer {
+#  name: "Dropout2"
+#  type: "Dropout"
+#  bottom: "InnerProduct2"
+#  top: "Dropout2"
+#  dropout_param {
+#    dropout_ratio: 0.5
+#  }
+#}
 layer {
   name: "InnerProduct3"
   type: "InnerProduct"
-  bottom: "Dropout2"
+  bottom: "Dropout1"
   top: "InnerProduct3"
   param {
     lr_mult: 1
@@ -249,8 +249,8 @@ layer {
   type: "Data"
   top: "Data2"
   data_param {
-    source: "/home/ubuntu/caffe/music/lmdb/test/notes"
-    batch_size: 50
+    source: "/home/ubuntu/caffe/music/lmdb/train/notes"
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -264,7 +264,7 @@ layer {
 layer {
   name: "InnerProduct5"
   type: "InnerProduct"
-  bottom: "Dropout2"
+  bottom: "Dropout1"
   top: "InnerProduct5"
   param {
     lr_mult: 1
@@ -316,8 +316,8 @@ layer {
   type: "Data"
   top: "Data3"
   data_param {
-    source: "/home/ubuntu/caffe/music/lmdb/test/times"
-    batch_size: 50
+    source: "/home/ubuntu/caffe/music/lmdb/train/times"
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -331,7 +331,7 @@ layer {
 layer {
   name: "InnerProduct7"
   type: "InnerProduct"
-  bottom: "Dropout2"
+  bottom: "Dropout1"
   top: "InnerProduct7"
   param {
     lr_mult: 1
@@ -383,8 +383,8 @@ layer {
   type: "Data"
   top: "Data4"
   data_param {
-    source: "/home/ubuntu/caffe/music/lmdb/test/durations"
-    batch_size: 50
+    source: "/home/ubuntu/caffe/music/lmdb/train/durations"
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -394,34 +394,4 @@ layer {
   bottom: "InnerProduct8"
   bottom: "Data4"
   top: "SoftmaxWithLoss3"
-}
-layer {
-  name: "Accuracy1"
-  type: "Accuracy"
-  bottom: "InnerProduct4"
-  bottom: "Data2"
-  top: "Accuracy1"
-  accuracy_param {
-    top_k: 2
-  }
-}
-layer {
-  name: "Accuracy2"
-  type: "Accuracy"
-  bottom: "InnerProduct6"
-  bottom: "Data3"
-  top: "Accuracy2"
-  accuracy_param {
-    top_k: 3
-  }
-}
-layer {
-  name: "Accuracy3"
-  type: "Accuracy"
-  bottom: "InnerProduct8"
-  bottom: "Data4"
-  top: "Accuracy3"
-  accuracy_param {
-    top_k: 3
-  }
 }

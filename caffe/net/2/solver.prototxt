@@ -1,7 +1,7 @@
 
-train_net: '/home/ubuntu/caffe/music/net/train.prototxt'
-test_net: '/home/ubuntu/caffe/music/net/test.prototxt'
-test_iter: 200
+train_net: '/home/ubuntu/caffe/music/net/2/train.prototxt'
+test_net: '/home/ubuntu/caffe/music/net/2/test.prototxt'
+test_iter: 400
 test_interval: 1000
 # The base learning rate, momentum and the weight decay of the network.
 base_lr: 0.0005
@@ -17,6 +17,6 @@ display: 100
 max_iter: 100000
 # snapshot intermediate results
 snapshot: 5000
-snapshot_prefix: "/home/ubuntu/caffe/music/net/snapshots/2016Apr18-10:51"
+snapshot_prefix: "/home/ubuntu/caffe/music/net/2/snapshots/2016Apr18"
 #solver mode: CPU or GPU
 solver_mode: GPU
