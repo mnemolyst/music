@@ -7,7 +7,7 @@ layer {
   }
   data_param {
     source: "/home/joshua/node/caffe/music/lmdb/test/images"
-    batch_size: 20
+    batch_size: 100
     backend: LMDB
   }
 }
@@ -250,7 +250,7 @@ layer {
   top: "Data2"
   data_param {
     source: "/home/joshua/node/caffe/music/lmdb/test/notes"
-    batch_size: 20
+    batch_size: 100
     backend: LMDB
   }
 }
@@ -317,7 +317,7 @@ layer {
   top: "Data3"
   data_param {
     source: "/home/joshua/node/caffe/music/lmdb/test/times"
-    batch_size: 20
+    batch_size: 100
     backend: LMDB
   }
 }
@@ -384,7 +384,7 @@ layer {
   top: "Data4"
   data_param {
     source: "/home/joshua/node/caffe/music/lmdb/test/durations"
-    batch_size: 20
+    batch_size: 100
     backend: LMDB
   }
 }
