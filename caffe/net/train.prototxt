@@ -7,7 +7,7 @@ layer {
   }
   data_param {
     source: "/home/ubuntu/caffe/music/lmdb/train/images"
-    batch_size: 64
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -250,7 +250,7 @@ layer {
   top: "Data2"
   data_param {
     source: "/home/ubuntu/caffe/music/lmdb/train/notes"
-    batch_size: 64
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -317,7 +317,7 @@ layer {
   top: "Data3"
   data_param {
     source: "/home/ubuntu/caffe/music/lmdb/train/times"
-    batch_size: 64
+    batch_size: 16
     backend: LMDB
   }
 }
@@ -384,7 +384,7 @@ layer {
   top: "Data4"
   data_param {
     source: "/home/ubuntu/caffe/music/lmdb/train/durations"
-    batch_size: 64
+    batch_size: 16
     backend: LMDB
   }
 }

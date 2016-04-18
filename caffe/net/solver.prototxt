@@ -1,7 +1,7 @@
 
 train_net: '/home/ubuntu/caffe/music/net/train.prototxt'
 test_net: '/home/ubuntu/caffe/music/net/test.prototxt'
-test_iter: 100
+test_iter: 200
 test_interval: 1000
 # The base learning rate, momentum and the weight decay of the network.
 base_lr: 0.0005
