@@ -5,7 +5,7 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'train';
+var trainTest = 'test';
 var makeLmdb = true;
 var makeImages = false;
 var printPoints = false;
@@ -16,20 +16,22 @@ var rows = 128;
 var cols = 512;
 
 var fileIn = process.argv[2];
-var maxPoints = process.argv[3] || 100;
+var maxPoints = process.argv[3] || 1;
 var melodyFile =   path.join(path.dirname(fileIn), path.basename(fileIn, '.mid') + '.melodies');
 var dbFile =       path.join(__dirname, '/db/', path.basename(fileIn, '.mid') + '.db');
+var dbIdx = 0;
 var imageFile =    path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.images.py');
 var noteFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.notes.py');
 var timeFile =     path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.times.py');
 var durationFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.durations.py');
 var velocityFile = path.join(__dirname, '../caffe/music/lmdb/', trainTest, path.basename(fileIn, '.mid') + '.velocities.py');
-var dbIdx = 0;
-fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/images\',     envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
-fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/notes\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
-fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/times\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
-fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
-fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+if (makeLmdb) {
+    fs.writeFileSync(imageFile,    'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/images\',     envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+    fs.writeFileSync(noteFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/notes\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+    fs.writeFileSync(timeFile,     'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/times\',      envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+    fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+    fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
+}
 
 var silhouetteLimit1 = 0.8;
 var silhouetteLimit2 = 0.4;
@@ -121,12 +123,6 @@ fs.readFile(fileIn, function(err, data) {
     tracks.sort(function(a, b) { return a.notes.length > b.notes.length ? -1 : a.notes.length < b.notes.length ? 1 : 0 });
     var track = tracks[0];
 
-    function dist(a, b) {
-        var nd = track.notes[a].n - track.notes[b].n;
-        var td = (track.notes[a].t + track.notes[a].d - track.notes[b].t - track.notes[b].d) * 0.5;
-        return Math.abs(10000 * nd * nd * nd) + td * td;
-    }
-
     function shuffleArray(array) {
         array = array.slice();
         for (var i = array.length - 1; i > 0; i--) {
@@ -136,108 +132,6 @@ fs.readFile(fileIn, function(err, data) {
             array[j] = temp;
         }
         return array;
-    }
-
-    function cluster(x, med) { // med is array of indices into x
-        var c = []; // clusters
-        for (var j = 0; j < med.length; j++) {
-            c[j] = [];
-        }
-        for (var i = 0; i < x.length; i++) {
-            var minD = null, minJ = 0;
-            for (var j = 0; j < med.length; j++) {
-                var d = dist(x[i], med[j]);
-                if (minD === null || d < minD) {
-                    minD = d;
-                    minJ = j; // index into med
-                }
-            }
-            if (minD !== null) {
-                c[minJ].push(x[i]) // put index into x in cluster minJ
-            }
-        }
-        return c;
-    }
-
-    function findMed(c) {
-        var med = [];
-        for (var i = 0; i < c.length; i++) { // for each cluster...
-            var minD = null, minJ = 0;
-            for (var j = 0; j < c[i].length; j++) { // for each potential medioid...
-                var sumD = 0;
-                for (var k = 0; k < c[i].length; k++) { // sum the distances to all other points
-                    if (j !== k) {
-                        sumD += dist(c[i][j], c[i][k]);
-                    }
-                }
-                if (minD === null || sumD < minD) {
-                    minD = sumD;
-                    minJ = j; // c[i][j] is the best medioid so far for cluster i
-                }
-            }
-            if (minD !== null) {
-                med[i] = c[i][minJ];
-            }
-        }
-        return med;
-    }
-
-    function diffMed(med1, med2) {
-        if (med1.length !== med2.length) {
-            return true;
-        }
-        for (var i = 0; i < med1.length; i++) {
-            if (med1[i] !== med2[i]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function kMed(x, k) {
-        var med = shuffleArray(x).slice(0, k);
-
-        var c, oldMed;
-
-        do {
-            c = cluster(x, med);
-            oldMed = med;
-            med = findMed(c);
-        } while (diffMed(oldMed, med));
-
-        return c;
-    }
-
-    function minSilhouette(c) {
-        var min = 1;
-        for (var i = 0; i < c.length; i++) {
-            for (var j = 0; j < c[i].length; j++) {
-                var thisSum = 0;
-                for (var k = 0; k < c[i].length; k++) {
-                    if (j !== k) {
-                        thisSum += dist(c[i][j], c[i][k]);
-                    }
-                }
-                var thisAvg = thisSum / k, minOtherAvg = null;
-                for (var l = 0; l < c.length; l++) {
-                    if (i !== l) {
-                        var oSum = 0;
-                        for (var m = 0; m < c[l].length; m++) {
-                            oSum += dist(c[i][j], c[l][m]);
-                        }
-                        var oAvg = oSum / m;
-                        if (minOtherAvg === null || oAvg < minOtherAvg) {
-                            minOtherAvg = oAvg;
-                        }
-                    }
-                }
-                var s = (minOtherAvg - thisAvg)/Math.max(thisAvg, minOtherAvg);
-                if (s < min) {
-                    min = s;
-                }
-            }
-        }
-        return min;
     }
 
     function generateTrainingPoints(leftLimitT, rightLimitT, genMax) {
@@ -255,29 +149,30 @@ fs.readFile(fileIn, function(err, data) {
         incompleteMelodies = shuffleArray(incompleteMelodies).slice(0, Math.round(Math.random() * (incompleteMelodies.length - 1) + 1));
         var withheldNotes = [];
         var removedNotes = [];
-        for (var i = 0; i < c.length; i++) {
-            if (incompleteMelodies.indexOf(i) !== -1) {
-                var someWithheld = [];
-                var trimmedLeft = Math.random() < 1/3;
-                var trimmedRight = (! trimmedLeft) && Math.random() < 1/2;
-                for (var j = 0; j < c[i].length; j++) {
-                    var note = track.notes[c[i][j]];
-                    if (note.t < leftLimitT && trimmedLeft) {
-                        removedNotes.push(c[i][j]);
-                    } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT && withheldNotes.indexOf(c[i][j]) === -1) {
-                        someWithheld.push(c[i][j]);
-                    } else if (rightLimitT < note.t + note.d && trimmedRight) {
-                        removedNotes.push(c[i][j]);
-                    }
+        for (var i = 0; i < incompleteMelodies.length; i++) {
+            var melody = c[incompleteMelodies[i]];
+            var someWithheld = [];
+            var trimmedLeft = Math.random() < 1/3;
+            var trimmedRight = (! trimmedLeft) && Math.random() < 1/2;
+            for (var j = 0; j < melody.length; j++) {
+                var note = track.notes[melody[j]];
+                if (
+                    (trimmedLeft && note.t < leftLimitT)
+                    || (trimmedRight && rightLimitT < note.t + note.d)
+                ) {
+                    removedNotes.push(melody[j]);
+                } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT && withheldNotes.indexOf(melody[j]) === -1) {
+                    someWithheld.push(melody[j]);
                 }
-                if (Math.random() < 0.5) {
-                    someWithheld = shuffleArray(someWithheld);
-                } else {
-                    someWithheld = someWithheld.slice(Math.round((Math.random() * someWithheld.length / 3)));
-                }
-                var sliceEnd = Math.min(Math.round(Math.random() * (someWithheld.length - 1) + 1), genMax - withheldNotes.length);
-                Array.prototype.push.apply(withheldNotes, someWithheld.slice(0, sliceEnd));
             }
+            //if (Math.random() < 0.5) {
+            //    someWithheld = shuffleArray(someWithheld);
+            //} else {
+            //    someWithheld = someWithheld.slice(Math.round((Math.random() * someWithheld.length / 3)));
+            //}
+            var sliceStart = Math.round(Math.random() * 0.25 * someWithheld.length);
+            var sliceEnd = Math.round((Math.random() * 0.25 + 0.75) * someWithheld.length);
+            Array.prototype.push.apply(withheldNotes, someWithheld.slice(sliceStart, sliceEnd));
         }
         // earlier notes first, then higher pitched notes first
         withheldNotes.sort(function(a, b) {
@@ -407,7 +302,7 @@ fs.readFile(fileIn, function(err, data) {
         }
 
         var trainPoints = [];
-        while (i = withheldNotes.shift()) {
+        while ((i = withheldNotes.shift()) && trainPoints.length < genMax) {
             var note = track.notes[i];
             (function() {
                 var thisBuf = new Buffer(imageBuf);
@@ -442,17 +337,17 @@ fs.readFile(fileIn, function(err, data) {
                 for (var i = 0; i < trainPoint.image.length; i++) {
                     imageProto += '\\x' + Number(trainPoint.image[i]).toString(16); // google protobuf escaped hex
                 }
-                noteProto = '\\x' + Number(trainPoint.note & 0xff).toString(16) + '\\x' + Number((trainPoint.note & 0xff00) >> 8).toString(16);
-                timeProto = '\\x' + Number(trainPoint.time & 0xff).toString(16) + '\\x' + Number((trainPoint.time & 0xff00) >> 8).toString(16);
-                durationProto = '\\x' + Number(trainPoint.duration & 0xff).toString(16) + '\\x' + Number((trainPoint.duration & 0xff00) >> 8).toString(16);
-                velocityProto = '\\x' + Number(trainPoint.velocity & 0xff).toString(16) + '\\x' + Number((trainPoint.velocity & 0xff00) >> 8).toString(16);
+                //noteProto = '\\x' + Number(trainPoint.note & 0xff).toString(16) + '\\x' + Number((trainPoint.note & 0xff00) >> 8).toString(16);
+                //timeProto = '\\x' + Number(trainPoint.time & 0xff).toString(16) + '\\x' + Number((trainPoint.time & 0xff00) >> 8).toString(16);
+                //durationProto = '\\x' + Number(trainPoint.duration & 0xff).toString(16) + '\\x' + Number((trainPoint.duration & 0xff00) >> 8).toString(16);
+                //velocityProto = '\\x' + Number(trainPoint.velocity & 0xff).toString(16) + '\\x' + Number((trainPoint.velocity & 0xff00) >> 8).toString(16);
 
                 var prototxt = [];
                 prototxt.push('channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "' + imageProto + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + noteProto + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + timeProto + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + durationProto + '"');
-                prototxt.push('channels: 1\nheight: 1\nwidth: 1\ndata: "' + velocityProto + '"');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.note + '');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.time + '');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.duration + '');
+                prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.velocity + '');
 
                 for (var i = 0; i < prototxt.length; i++) {
                     self.children.push(new Promise(function(resolve, reject) {
@@ -533,12 +428,14 @@ fs.readFile(fileIn, function(err, data) {
     }
 
     // generate training points
-    var trainPoints = [];
-    while (trainPoints.length < maxPoints) {
-        var widthT = ticksPerBeat * Math.floor(Math.random() * 12 + 4);
-        var leftLimitT = Math.floor(Math.random() * (track.lastNoteEnd - widthT));
-        var thisPoints = generateTrainingPoints(leftLimitT, leftLimitT + widthT, maxPoints - trainPoints.length);
-        Array.prototype.push.apply(trainPoints, thisPoints);
+    if (makeImages || printPoints || makeLmdb) {
+        var trainPoints = [];
+        while (trainPoints.length < maxPoints) {
+            var widthT = ticksPerBeat * Math.floor(Math.random() * 12 + 4);
+            var leftLimitT = Math.floor(Math.random() * (track.lastNoteEnd - widthT));
+            var thisPoints = generateTrainingPoints(leftLimitT, leftLimitT + widthT, maxPoints - trainPoints.length);
+            Array.prototype.push.apply(trainPoints, thisPoints);
+        }
     }
 
     if (makeImages) {
@@ -584,11 +481,6 @@ fs.readFile(fileIn, function(err, data) {
         var dbIn = {
             name: path.basename(fileIn, '.mid'),
             notes: track.notes.map(function(el) { el.n -= 69; el.t *= minResScale * 0.25; el.d *= minResScale * 0.25; return el }),
-            staff: {
-                noteLines: [5, 3, 1, -1, -3, -7, -9, -11, -13, -15],
-                keySig: [0, 0, 0, 0, 0, 0, 0],
-                timeDiv: timeDiv,
-            },
             ticksPerBeat: midifile.header.ticksPerBeat,
             tempo: tempo,
         };

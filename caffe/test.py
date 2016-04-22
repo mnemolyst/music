@@ -10,7 +10,7 @@ import PIL
 caffeRoot = path.join(sys.path[0], '../../caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
-caffe.set_mode_gpu()
+caffe.set_mode_cpu()
 
 if len(sys.argv) == 2:
     net = caffe.Net(sys.argv[1], caffe.TEST)

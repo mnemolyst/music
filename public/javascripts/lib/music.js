@@ -52,7 +52,9 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         1: 'red',
         2: 'lightgreen',
         3: 'blue',
-        4: 'yellow'
+        4: 'yellow',
+        5: 'violet',
+        6: 'orange',
     };
     var currentMelody = 1;
     var dragBox = null;
@@ -500,6 +502,14 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         var tool = new Tool();
         tool.onKeyDown = function(event) {
             switch (event.key) {
+                case 'a':
+                    if (event.modifiers.shift) {
+                        for (var i = 0; i < composition.notes.length; i++) {
+                            composition.notes[i].melodies = [currentMelody];
+                        }
+                        composition.refresh();
+                    }
+                    break;
                 case 'h':
                     if (cursor.t === 0) {
                         break;
@@ -597,14 +607,15 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                     cursor.refresh();
                     break;
                 case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
-                    if (! $nameInput.dialog('isOpen')) {
-                        var note = new Note(cursor.t, Number(event.key), cursor.note, []);
-                        composition.notes.push(note);
+                    if (mouseMode === 'select') {
+                        currentMelody = Number(event.key);
+                    } else {
+                        if (! $nameInput.dialog('isOpen')) {
+                            var note = new Note(cursor.t, Number(event.key), cursor.note, []);
+                            composition.notes.push(note);
+                        }
                     }
                     break;
-                //case '1': case '2': case'3': case '4': case '5':
-                //    currentMelody = Number(event.key);
-                //    break;
                 case '-':
                     var idx = composition.notes.findIndex(function(el) {
                         return (cursor.t >= el.t - 1) && (cursor.t < el.t + el.d) && (el.note === cursor.note);
@@ -750,7 +761,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                 }
             })()
             compositionLinks.addChild(pt);
-            if (compositionLinks.children.length % 8 === 0) {
+            if (compositionLinks.children.length % 12 === 0) {
                 iterPos = iterPos.add([0, pt.bounds.height + 5]);
                 iterPos.x = 0;
             } else {
@@ -834,18 +845,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             content: 'Play',
         });
         playLink.onClick = function() {
-            //var params = composition.notes.reduce(function(prev, curr) {
-            //    if (prev.low === null || curr.note < prev.low) {
-            //        prev.low = curr.note;
-            //    }
-            //    if (prev.high === null || prev.high < curr.note) {
-            //        prev.high = curr.note;
-            //    }
-            //    if (prev.len === null || prev.len < curr.t + curr.d) {
-            //        prev.len = curr.t + curr.d;
-            //    }
-            //    return prev;
-            //}, {low:null, high:null, len:null});
             composition.notes.sort(function(a, b) {
                 return (b.t + b.d) - (a.t + a.d);
             });
@@ -919,7 +918,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             var total = 0;
             for (var i = 0; i < composition.notes.length; i++) {
                 var melodies = composition.notes[i].melodies;
-                if (melodies) {
+                if (melodies.length > 0) {
                     for (var j = 0; j < melodies.length; j++) {
                         if (! c.hasOwnProperty(melodies[j]-1)) {
                             c[melodies[j]-1] = [];
