@@ -5,7 +5,7 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'test';
+var trainTest = 'train';
 var makeLmdb = true;
 var makeImages = false;
 var printPoints = false;
@@ -32,9 +32,6 @@ if (makeLmdb) {
     fs.writeFileSync(durationFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/durations\',  envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
     fs.writeFileSync(velocityFile, 'import lmdb\nimport sys\nenvSize=1024*1024*1024*1024\nenv=lmdb.open(sys.path[0] + \'/velocities\', envSize)\ntr=env.begin(None,None,True)\nc=tr.cursor()\npre=env.stat()[\'entries\']\n');
 }
-
-var silhouetteLimit1 = 0.8;
-var silhouetteLimit2 = 0.4;
 
 var colors = [
     [0xff, 0, 0],
@@ -291,7 +288,7 @@ fs.readFile(fileIn, function(err, data) {
                 imageBuf[idx2] = Math.min(imageBuf[idx2] + 64, 255);
             }
         }
-        for (var i = lc; i < uc; i++) {
+        for (var i = lc + 1; i < uc; i++) {
             var zigZag = (i-lc)%2 ? 0 : (i-lc)%4 ? -1 : 1;
             for (var k = 0; k < bpp; k++) {
                 var idx1 = Math.round((rows - 1 - lowN - zigZag) * cols + i) * bpp + k;
@@ -314,9 +311,6 @@ fs.readFile(fileIn, function(err, data) {
                     time: Math.round((note.t - leftImgT) * resScale) - Math.round((leftLimitT - leftImgT) * resScale),
                     duration: Math.round((note.t + note.d - leftImgT) * resScale) - Math.round((note.t - leftImgT) * resScale),
                     velocity: Math.floor(note.v / 8),
-                    rows: rows,
-                    cols: cols,
-                    bpp: bpp,
                 });
             })();
             drawNote(i, imageBuf);
@@ -337,13 +331,9 @@ fs.readFile(fileIn, function(err, data) {
                 for (var i = 0; i < trainPoint.image.length; i++) {
                     imageProto += '\\x' + Number(trainPoint.image[i]).toString(16); // google protobuf escaped hex
                 }
-                //noteProto = '\\x' + Number(trainPoint.note & 0xff).toString(16) + '\\x' + Number((trainPoint.note & 0xff00) >> 8).toString(16);
-                //timeProto = '\\x' + Number(trainPoint.time & 0xff).toString(16) + '\\x' + Number((trainPoint.time & 0xff00) >> 8).toString(16);
-                //durationProto = '\\x' + Number(trainPoint.duration & 0xff).toString(16) + '\\x' + Number((trainPoint.duration & 0xff00) >> 8).toString(16);
-                //velocityProto = '\\x' + Number(trainPoint.velocity & 0xff).toString(16) + '\\x' + Number((trainPoint.velocity & 0xff00) >> 8).toString(16);
 
                 var prototxt = [];
-                prototxt.push('channels: 1\nheight: ' + trainPoint.rows + '\nwidth: ' + trainPoint.cols + '\ndata: "' + imageProto + '"');
+                prototxt.push('channels: 1\nheight: ' + rows + '\nwidth: ' + cols + '\ndata: "' + imageProto + '"');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.note + '');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.time + '');
                 prototxt.push('channels: 1\nheight: 1\nwidth: 1\nfloat_data: ' + trainPoint.duration + '');
@@ -421,7 +411,6 @@ fs.readFile(fileIn, function(err, data) {
                     });
                 }).then(function() {
                     callback();
-                    //self.go();
                 });
             });
         }
