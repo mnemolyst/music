@@ -30,4 +30,4 @@ for i in range(5):
     raw = net.blobs['Data1'].data[i][0]
     image = transformer.preprocess('data', raw)
     img = PIL.Image.fromarray(image.astype(numpy.ubyte), 'L')
-    img.save(path.join('test', str(i) + '.png'))
+    img.save(path.join('test_images', str(i) + '.png'))
