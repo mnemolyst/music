@@ -1,1 +1,1 @@
-console.log((0xfffe & 0xff00) >> 8);
+console.log('a' + 255 + 'b');
