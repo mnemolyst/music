@@ -7,9 +7,9 @@ import time
 import pickle
 import glob
 from os import path, remove
-from numpy import zeros, ones, log10, power, isfinite, array, linalg, arange
+from numpy import ones, log10, power, isfinite, array, linalg, arange, concatenate
 import matplotlib.pyplot as plt
-caffeRoot = path.join(sys.path[0], '..')
+caffeRoot = path.join(path.expanduser('~'), 'music_project', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 from caffe import layers as L
@@ -19,15 +19,15 @@ outDir = path.join(sys.path[0], 'random')
 lmdbDir = path.join(sys.path[0], 'lmdb')
 nets = []
 timePrefix = time.strftime('%Y%b%d-%H:%M')
-maxNets = 1
-numIter = 10
+maxNets = 10
+numIter = 300
 testInt = 10
 
 paramTemplates = {
     'conv1_num_output': {
         'type': 'int',
-        'min': 100,
-        'max': 500,
+        'min': 8,
+        'max': 64,
     },
     'conv1_kernel_w': {
         'type': 'int',
@@ -45,56 +45,6 @@ paramTemplates = {
         'max': 5,
     },
     'conv1_stride_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'conv2_num_output': {
-        'type': 'int',
-        'min': 100,
-        'max': 500,
-    },
-    'conv2_kernel_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 20,
-    },
-    'conv2_kernel_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 10,
-    },
-    'conv2_stride_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'conv2_stride_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'conv3_num_output': {
-        'type': 'int',
-        'min': 100,
-        'max': 500,
-    },
-    'conv3_kernel_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 20,
-    },
-    'conv3_kernel_h': {
-        'type': 'int',
-        'min': 1,
-        'max': 10,
-    },
-    'conv3_stride_w': {
-        'type': 'int',
-        'min': 1,
-        'max': 5,
-    },
-    'conv3_stride_h': {
         'type': 'int',
         'min': 1,
         'max': 5,
@@ -119,11 +69,6 @@ paramTemplates = {
         'min': 1,
         'max': 5,
     },
-    'conv_bias_constant': {
-        'type': 'real',
-        'min': 0,
-        'max': 1,
-    },
     # ip1, ip2
     'ip1_num_output': {
         'type': 'int',
@@ -139,38 +84,13 @@ paramTemplates = {
     'ip3_note_num_output': {
         'type': 'int',
         'min': 100,
-        'max': 500,
-    },
-    'ip3_time_num_output': {
-        'type': 'int',
-        'min': 100,
-        'max': 500,
-    },
-    'ip3_duration_num_output': {
-        'type': 'int',
-        'min': 100,
-        'max': 500,
-    },
-    'ip3_velocity_num_output': {
-        'type': 'int',
-        'min': 100,
-        'max': 500,
-    },
-    'ip_bias_constant': {
-        'type': 'real',
-        'min': 0,
-        'max': 1,
+        'max': 400,
     },
     # solver params
-    'bias_lr_mult': {
-        'type': 'real',
-        'min': 1,
-        'max': 3,
-    },
     'base_lr': {
         'type': 'log',
-        'min': 0.00001,
-        'max': 0.001,
+        'min': 0.001,
+        'max': 0.1,
     },
     'lr_momentum': {
         'type': 'real',
@@ -193,6 +113,23 @@ paramTemplates = {
         'max': 0.95,
     },
 }
+paramTemplates['conv2_num_output'] = paramTemplates['conv1_num_output']
+paramTemplates['conv2_kernel_w'] =   paramTemplates['conv1_kernel_w']
+paramTemplates['conv2_kernel_h'] =   paramTemplates['conv1_kernel_h']
+paramTemplates['conv2_stride_w'] =   paramTemplates['conv1_stride_w']
+paramTemplates['conv2_stride_h'] =   paramTemplates['conv1_stride_h']
+paramTemplates['conv3_num_output'] = paramTemplates['conv1_num_output']
+paramTemplates['conv3_kernel_w'] =   paramTemplates['conv1_kernel_w']
+paramTemplates['conv3_kernel_h'] =   paramTemplates['conv1_kernel_h']
+paramTemplates['conv3_stride_w'] =   paramTemplates['conv1_stride_w']
+paramTemplates['conv3_stride_h'] =   paramTemplates['conv1_stride_h']
+paramTemplates['ip3_time_num_output'] =     paramTemplates['ip3_note_num_output']
+paramTemplates['ip3_duration_num_output'] = paramTemplates['ip3_note_num_output']
+paramTemplates['ip3_velocity_num_output'] = paramTemplates['ip3_note_num_output']
+paramTemplates['ip4_note_num_output'] =     paramTemplates['ip3_note_num_output']
+paramTemplates['ip4_time_num_output'] =     paramTemplates['ip3_note_num_output']
+paramTemplates['ip4_duration_num_output'] = paramTemplates['ip3_note_num_output']
+paramTemplates['ip4_velocity_num_output'] = paramTemplates['ip3_note_num_output']
 
 layerTemplates = [
     {
@@ -200,11 +137,14 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': path.join(lmdbDir, '{{phase}}/images'),
+            'source': path.join(lmdbDir, 'train/images'),
             'batch_size': 20,
             'backend': P.Data.LMDB,
             'transform_param': {
                 'scale': 1./255
+            },
+            'include': {
+                'phase': caffe.TRAIN,
             },
         },
     },
@@ -213,9 +153,12 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': path.join(lmdbDir, '{{phase}}/notes'),
+            'source': path.join(lmdbDir, 'train/notes'),
             'batch_size': 20,
             'backend': P.Data.LMDB,
+            'include': {
+                'phase': caffe.TRAIN,
+            },
         },
     },
     {
@@ -223,9 +166,12 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': path.join(lmdbDir, '{{phase}}/times'),
+            'source': path.join(lmdbDir, 'train/times'),
             'batch_size': 20,
             'backend': P.Data.LMDB,
+            'include': {
+                'phase': caffe.TRAIN,
+            },
         },
     },
     {
@@ -233,9 +179,12 @@ layerTemplates = [
         'type': 'Data',
         'args': {
             'ntop': 1,
-            'source': path.join(lmdbDir, '{{phase}}/durations'),
+            'source': path.join(lmdbDir, 'train/durations'),
             'batch_size': 20,
             'backend': P.Data.LMDB,
+            'include': {
+                'phase': caffe.TRAIN,
+            },
         },
     },
     #{
@@ -243,9 +192,12 @@ layerTemplates = [
     #    'type': 'Data',
     #    'args': {
     #        'ntop': 1,
-    #        'source': path.join(lmdbDir, '{{phase}}/velocities'),
+    #        'source': path.join(lmdbDir, 'train/velocities'),
     #        'batch_size': 20,
     #        'backend': P.Data.LMDB,
+    #        'include': {
+    #            'phase': caffe.TRAIN,
+    #        },
     #    },
     #},
     {
@@ -255,7 +207,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{conv1_num_output}}',
             'kernel_w': '{{conv1_kernel_w}}',
@@ -267,7 +219,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{conv_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -286,7 +238,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{conv2_num_output}}',
             'kernel_w': '{{conv2_kernel_w}}',
@@ -298,7 +250,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{conv_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -317,7 +269,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{conv3_num_output}}',
             'kernel_w': '{{conv3_kernel_w}}',
@@ -329,7 +281,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{conv_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -360,7 +312,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{ip1_num_output}}',
             'weight_filler': {
@@ -368,7 +320,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -395,7 +347,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{ip2_num_output}}',
             'weight_filler': {
@@ -403,7 +355,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -430,7 +382,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{ip3_note_num_output}}',
             'weight_filler': {
@@ -438,7 +390,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -449,7 +401,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{ip3_time_num_output}}',
             'weight_filler': {
@@ -457,7 +409,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -468,7 +420,7 @@ layerTemplates = [
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': '{{ip3_duration_num_output}}',
             'weight_filler': {
@@ -476,7 +428,7 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
@@ -487,7 +439,7 @@ layerTemplates = [
     #    'args': {
     #        'param': [
     #            {'lr_mult': 1},
-    #            {'lr_mult': '{{bias_lr_mult}}'},
+    #            {'lr_mult': 2},
     #        ],
     #        'num_output': '{{ip3_velocity_num_output}}',
     #        'weight_filler': {
@@ -495,7 +447,7 @@ layerTemplates = [
     #        },
     #        'bias_filler': {
     #            'type': 'constant',
-    #            'value': '{{ip_bias_constant}}',
+    #            'value': 0.2,
     #        },
     #    },
     #},
@@ -534,11 +486,119 @@ layerTemplates = [
     {
         'name': 'ip4_note',
         'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': 2},
+            ],
+            'num_output': '{{ip4_note_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': 0.2,
+            },
+        },
+    },
+    {
+        'name': 'ip4_time',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': 2},
+            ],
+            'num_output': '{{ip4_time_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': 0.2,
+            },
+        },
+    },
+    {
+        'name': 'ip4_duration',
+        'type': 'InnerProduct',
+        'bottom': 'dropout2',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': 2},
+            ],
+            'num_output': '{{ip4_duration_num_output}}',
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': 0.2,
+            },
+        },
+    },
+    #{
+    #    'name': 'ip4_velocity',
+    #    'type': 'InnerProduct',
+    #    'bottom': 'dropout2',
+    #    'args': {
+    #        'param': [
+    #            {'lr_mult': 1},
+    #            {'lr_mult': 2},
+    #        ],
+    #        'num_output': '{{ip4_velocity_num_output}}',
+    #        'weight_filler': {
+    #            'type': 'xavier',
+    #        },
+    #        'bias_filler': {
+    #            'type': 'constant',
+    #            'value': 0.2,
+    #        },
+    #    },
+    #},
+    {
+        'name': 'relu7_note',
+        'type': 'ReLU',
+        'bottom': 'ip4_note',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'relu7_time',
+        'type': 'ReLU',
+        'bottom': 'ip4_time',
+        'args': {
+            'in_place': True,
+        },
+    },
+    {
+        'name': 'relu7_duration',
+        'type': 'ReLU',
+        'bottom': 'ip4_duration',
+        'args': {
+            'in_place': True,
+        },
+    },
+    #{
+    #    'name': 'relu7_velocity',
+    #    'type': 'ReLU',
+    #    'bottom': 'ip4_velocity',
+    #    'args': {
+    #        'in_place': True,
+    #    },
+    #},
+    {
+        'name': 'ip5_note',
+        'type': 'InnerProduct',
         'bottom': 'relu6_note',
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': 128,
             'weight_filler': {
@@ -546,37 +606,18 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
             },
         },
     },
     {
-        'name': 'ip4_time',
+        'name': 'ip5_time',
         'type': 'InnerProduct',
         'bottom': 'relu6_time',
         'args': {
             'param': [
                 {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
-            ],
-            'num_output': 512,
-            'weight_filler': {
-                'type': 'xavier',
-            },
-            'bias_filler': {
-                'type': 'constant',
-                'value': '{{ip_bias_constant}}',
-            },
-        },
-    },
-    {
-        'name': 'ip4_duration',
-        'type': 'InnerProduct',
-        'bottom': 'relu6_duration',
-        'args': {
-            'param': [
-                {'lr_mult': 1},
-                {'lr_mult': '{{bias_lr_mult}}'},
+                {'lr_mult': 2},
             ],
             'num_output': 256,
             'weight_filler': {
@@ -584,18 +625,37 @@ layerTemplates = [
             },
             'bias_filler': {
                 'type': 'constant',
-                'value': '{{ip_bias_constant}}',
+                'value': 0.2,
+            },
+        },
+    },
+    {
+        'name': 'ip5_duration',
+        'type': 'InnerProduct',
+        'bottom': 'relu6_duration',
+        'args': {
+            'param': [
+                {'lr_mult': 1},
+                {'lr_mult': 2},
+            ],
+            'num_output': 256,
+            'weight_filler': {
+                'type': 'xavier',
+            },
+            'bias_filler': {
+                'type': 'constant',
+                'value': 0.2,
             },
         },
     },
     #{
-    #    'name': 'ip4_velocity',
+    #    'name': 'ip5_velocity',
     #    'type': 'InnerProduct',
     #    'bottom': 'relu6_velocity',
     #    'args': {
     #        'param': [
     #            {'lr_mult': 1},
-    #            {'lr_mult': '{{bias_lr_mult}}'},
+    #            {'lr_mult': 2},
     #        ],
     #        'num_output': 16,
     #        'weight_filler': {
@@ -603,7 +663,7 @@ layerTemplates = [
     #        },
     #        'bias_filler': {
     #            'type': 'constant',
-    #            'value': '{{ip_bias_constant}}',
+    #            'value': 0.2,
     #        },
     #    },
     #},
@@ -611,7 +671,7 @@ layerTemplates = [
         'name': 'loss_note',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip4_note',
+            'ip5_note',
             'notes',
         ],
     },
@@ -619,7 +679,7 @@ layerTemplates = [
         'name': 'loss_time',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip4_time',
+            'ip5_time',
             'times',
         ],
     },
@@ -627,7 +687,7 @@ layerTemplates = [
         'name': 'loss_duration',
         'type': 'SoftmaxWithLoss',
         'bottom': [
-            'ip4_duration',
+            'ip5_duration',
             'durations',
         ],
     },
@@ -635,7 +695,7 @@ layerTemplates = [
     #    'name': 'loss_velocity',
     #    'type': 'SoftmaxWithLoss',
     #    'bottom': [
-    #        'ip4_velocity',
+    #        'ip5_velocity',
     #        'velocities',
     #    ],
     #},
@@ -643,52 +703,61 @@ layerTemplates = [
         'name': 'accuracy_note',
         'type': 'Accuracy',
         'bottom': [
-            'ip4_note',
+            'ip5_note',
             'notes',
         ],
         'args': {
             'top_k': 2,
+            'include': {
+                'phase': caffe.TEST,
+            },
         },
     },
     {
         'name': 'accuracy_time',
         'type': 'Accuracy',
         'bottom': [
-            'ip4_time',
+            'ip5_time',
             'times',
         ],
         'args': {
             'top_k': 3,
+            'include': {
+                'phase': caffe.TEST,
+            },
         },
     },
     {
         'name': 'accuracy_duration',
         'type': 'Accuracy',
         'bottom': [
-            'ip4_duration',
+            'ip5_duration',
             'durations',
         ],
         'args': {
             'top_k': 3,
+            'include': {
+                'phase': caffe.TEST,
+            },
         },
     },
     #{
     #    'name': 'accuracy_velocity',
     #    'type': 'SoftmaxWithLoss',
     #    'bottom': [
-    #        'ip4_velocity',
+    #        'ip5_velocity',
     #        'velocities',
     #    ],
     #},
 ]
 
 solverTemplate = """
-train_net: '{{train_net}}'
-test_net: '{{test_net}}'
-test_iter: 20
+train_net: '{{net}}'
+test_net: '{{net}}'
+test_iter: 1
 test_interval: 10000
 # The base learning rate, momentum and the weight decay of the network.
-base_lr: 0.0005
+base_lr: 0.01
 momentum: 0.9
 weight_decay: 0.0005
 # The learning rate policy
@@ -728,15 +797,12 @@ def genValues(paramTemplates):
         values[k] = value
     return values
 
-def subValues(d, paramValues, phase):
+def subValues(d, paramValues):
     if type(d) is str:
         while True:
             m = re.search('{{(.*?)}}', d)
             if m:
-                if m.group(1).strip() == 'phase':
-                    d = d[:m.start()] + phase + d[m.end():]
-                else:
-                    d = d[:m.start()] + str(paramValues[m.group(1).strip()]) + d[m.end():]
+                d = d[:m.start()] + str(paramValues[m.group(1).strip()]) + d[m.end():]
             else:
                 break
         try:
@@ -746,10 +812,10 @@ def subValues(d, paramValues, phase):
     elif type(d) is dict:
         ret = {}
         for el in d:
-            ret[el] = subValues(d[el], paramValues, phase)
+            ret[el] = subValues(d[el], paramValues)
         return ret
     elif type(d) is list:
-        return map(lambda x: subValues(x, paramValues, phase), d)
+        return map(lambda x: subValues(x, paramValues), d)
     else:
         return d
 
@@ -790,21 +856,17 @@ def fitPoly(data, degree=2):
 
 def newSolver(n):
     global paramTemplates, layerTemplates, solverTemplate, timePrefix, outDir, nets
-    netFiles = {
-        'train': timePrefix + '-train-' + str(n) + '.prototxt',
-        'test': timePrefix + '-test-' + str(n) + '.prototxt',
-    }
+    netFile = timePrefix + '-train-test-' + str(n) + '.prototxt'
     solverFile = timePrefix + '-solver-' + str(n) + '.prototxt'
     paramValues = genValues(paramTemplates)
-    for phase in ['train', 'test']:
-        layerDefs = subValues(layerTemplates, paramValues, phase)
-        net = genNet(layerDefs)
-        with open(path.join(outDir, netFiles[phase]), 'w') as f:
-            #f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
-            f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.accuracy_note, net.accuracy_time, net.accuracy_duration)))
+    layerDefs = subValues(layerTemplates, paramValues)
+    net = genNet(layerDefs)
+    with open(path.join(outDir, netFile), 'w') as f:
+        testData = str(caffe.to_proto(net.images, net.notes, net.times, net.durations)).replace('train', 'test').replace('TRAIN', 'TEST')
+        #f.write(str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.loss_velocity)))
+        f.write(testData + str(caffe.to_proto(net.loss_note, net.loss_time, net.loss_duration, net.accuracy_note, net.accuracy_time, net.accuracy_duration)))
     solverDef = solverTemplate
-    solverDef = solverDef.replace('{{train_net}}', path.join(outDir, netFiles['train']))
-    solverDef = solverDef.replace('{{test_net}}', path.join(outDir, netFiles['test']))
+    solverDef = solverDef.replace('{{net}}', path.join(outDir, netFile))
     solverDef = solverDef.replace('{{snapshot_int}}', str(numIter))
     solverDef = solverDef.replace('{{snapshot_prefix}}', path.join(outDir, 'snapshots', timePrefix + '-' + str(n)))
     solverDef = genSolver(solverDef, paramValues)
@@ -814,29 +876,68 @@ def newSolver(n):
     out = p.stdout.read()
 
     try:
-        unp = pickle.loads(out)
+        losses = pickle.loads(out)
     except Exception as e:
-        unp = array([float('nan'), float('nan'), float('nan')])
+        losses = array([float('nan'), float('nan'), float('nan')])
 
-    if p.poll() == 0 and isfinite(unp[0].sum()) and isfinite(unp[1].sum()):
-        #(w, xi, y) = fitPoly(unp[0].sum(1))
+    if p.poll() == 0 and isfinite(losses[0].sum()) and isfinite(losses[1].sum()):
+        #(w, xi, y) = fitPoly(losses[0].sum(1))
         #staX = w[1] / (-2 * w[0])
         #staY = ((w[0] * staX) + w[1]) * staX + w[2]
-        #plt.plot(range(unp[0].sum(1).shape[0]), unp[0].sum(1), xi, y)
+        #plt.plot(range(losses[0].sum(1).shape[0]), losses[0].sum(1), xi, y)
         #plt.savefig(path.join(outDir, 'plot', solverFile) + '.loss.png')
         #plt.clf()
-        nets.append([solverFile, paramValues, unp])
+        nets.append({
+            'solverFile': solverFile,
+            'paramValues': paramValues,
+            'trainLoss': losses[0],
+            'testLoss': losses[1],
+            'accuracy': losses[2],
+        })
         with open(path.join(outDir, timePrefix + '-nets'), 'w') as f:
             f.write(pickle.dumps(nets))
     else:
-        remove(path.join(outDir, netFiles['train']))
-        remove(path.join(outDir, netFiles['test']))
+        remove(path.join(outDir, netFile))
         remove(path.join(outDir, solverFile))
 
-# make new nets
-while True:
-    if len(nets) < maxNets:
-        print len(nets)
-        newSolver(len(nets))
-    if len(nets) >= maxNets:
-        break
+netsFile = None
+for i in range(len(sys.argv)):
+    if sys.argv[i] == '--nets':
+        netsFile = sys.argv[i+1]
+
+if netsFile:
+    newNets = []
+    with open(netsFile) as f:
+        nets = pickle.loads(f.read())
+    for net in nets:
+        print net['solverFile']
+        m = re.search('(.*)-solver-(\d+)', net['solverFile'])
+        if m:
+            snapshots = glob.glob(path.join(path.dirname(netsFile), 'snapshots', m.group(1) + '-' + m.group(2) + '*solverstate'))
+            snapshots.sort(key = lambda x: int(x[x.index('_iter_') + 6 : -12]), reverse = True)
+            p = subprocess.Popen(['python', 'runSolver.py', '--solver', path.join(path.dirname(netsFile), net['solverFile']), '--snapshot', snapshots[0], '--iter', str(numIter), '--testint', str(testInt)], stdout=subprocess.PIPE)
+            out = p.stdout.read()
+            try:
+                losses = pickle.loads(out)
+            except Exception as e:
+                losses = array([float('nan'), float('nan'), float('nan')])
+
+            if p.poll() == 0 and isfinite(losses[0].sum()) and isfinite(losses[1].sum()):
+                newNets.append({
+                    'solverFile': net['solverFile'],
+                    'paramValues': net['paramValues'],
+                    'trainLoss': concatenate((net['trainLoss'], losses[0])),
+                    'testLoss': concatenate((net['testLoss'], losses[1])),
+                    'accuracy': concatenate((net['accuracy'], losses[2])),
+                })
+    with open(netsFile, 'w') as f:
+        f.write(pickle.dumps(newNets))
+
+else:
+    # make new nets
+    while True:
+        if len(nets) < maxNets:
+            print len(nets)
+            newSolver(len(nets))
+        if len(nets) >= maxNets:
+            break

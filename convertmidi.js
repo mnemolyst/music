@@ -137,84 +137,113 @@ fs.readFile(fileIn, function(err, data) {
         // build training set
         var resScale = minResScale * (1 + Math.random());
         var timeWidth = cols / resScale;
-        var leftImgT = leftLimitT - (Math.random() * 0.6 + 0.2) * (timeWidth - rightLimitT + leftLimitT);
+        var leftImgT = leftLimitT - (Math.random() * 0.3 + 0.5) * (timeWidth - rightLimitT + leftLimitT);
         var rightImgT = leftImgT + timeWidth;
-        var incompleteMelodies = [];
-        for (var i = 0; i < c.length; i++) {
-            incompleteMelodies.push(i);
-        }
-        incompleteMelodies = shuffleArray(incompleteMelodies).slice(0, Math.round(Math.random() * (incompleteMelodies.length - 1) + 1));
-        var withheldNotes = [];
-        var removedNotes = [];
-        for (var i = 0; i < incompleteMelodies.length; i++) {
-            var melody = c[incompleteMelodies[i]];
-            var someWithheld = [];
-            var trimmedLeft = Math.random() < 1/3;
-            var trimmedRight = (! trimmedLeft) && Math.random() < 1/2;
-            for (var j = 0; j < melody.length; j++) {
-                var note = track.notes[melody[j]];
-                if (
-                    (trimmedLeft && note.t < leftLimitT)
-                    || (trimmedRight && rightLimitT < note.t + note.d)
-                ) {
-                    removedNotes.push(melody[j]);
-                } else if (leftLimitT <= note.t && note.t + note.d <= rightLimitT && withheldNotes.indexOf(melody[j]) === -1) {
-                    someWithheld.push(melody[j]);
-                }
-            }
-            //if (Math.random() < 0.5) {
-            //    someWithheld = shuffleArray(someWithheld);
-            //} else {
-            //    someWithheld = someWithheld.slice(Math.round((Math.random() * someWithheld.length / 3)));
-            //}
-            var sliceStart = Math.round(Math.random() * 0.25 * someWithheld.length);
-            var sliceEnd = Math.round((Math.random() * 0.25 + 0.75) * someWithheld.length);
-            Array.prototype.push.apply(withheldNotes, someWithheld.slice(sliceStart, sliceEnd));
-        }
-        // earlier notes first, then higher pitched notes first
-        withheldNotes.sort(function(a, b) {
-            var noteA = track.notes[a];
-            var noteB = track.notes[b];
-            if (noteA.t < noteB.t) {
-                return -1;
-            } else if (noteB.t < noteA.t) {
-                return 1;
-            } else {
-                if (noteA.n < noteB.n) {
-                    return 1;
-                } else if (noteB.n < noteA.n) {
-                    return -1;
-                } else {
-                    return 0;
-                }
-            }
-        });
 
+        var extantMelodies = [];
+        melodies: for (var i = 0; i < c.length; i++) {
+            for (var j = 0; j < c[i].length; j++) {
+                var note = track.notes[c[i][j]];
+                if (leftLimitT <= note.t && note.t + note.d <= rightLimitT && extantMelodies.indexOf(i) === -1) {
+                    extantMelodies.push(i);
+                    continue melodies;
+                }
+            }
+        }
+        var trainMelody = Math.floor(Math.random() * extantMelodies.length);
+        var withheldNotes = [];
+        //var trimmedLeft = Math.random() < 1/3;
+        //var trimmedRight = (! trimmedLeft) && Math.random() < 1/2;
+        var trimmedLeft = false;
+        var trimmedRight = Math.random() < 1/2;
         var trainNotes = [];
         var lowN = 127;
         var highN = 0;
-        for (var i = 0; i < track.notes.length; i++) {
-            var note = track.notes[i];
-            var noteMelody = null;
-            for (var j = 0; j < c.length; j++) {
-                if (c[j].indexOf(i) !== -1) {
-                    noteMelody = j;
-                }
+        for (var i = 0; i < c.length; i++) {
+            if (trimmedLeft) {
+                var thisLeftLimitT = Math.round(leftImgT + Math.random() * 0.75 * (rightImgT - leftImgT));
+                var thisRightLimitT = rightImgT;
+            } else if (trimmedRight) {
+                var thisLeftLimitT = leftImgT;
+                var thisRightLimitT = Math.round(leftImgT + (0.25 + Math.random() * 0.75) * (rightImgT - leftImgT));
+            } else {
+                var thisLeftLimitT = leftImgT;
+                var thisRightLimitT = rightImgT;
             }
-            if (
-                leftImgT < note.t && note.t + note.d < rightImgT // inside image
-                && withheldNotes.indexOf(i) === -1
-                && removedNotes.indexOf(i) === -1
-            ) {
-                trainNotes.push(i);
-            } else if (withheldNotes.indexOf(i) !== -1) {
-                if (bpp === 3) { // XXX for debugging
-                    trainNotes.push(i);
+            if (i === trainMelody) {
+                thisLeftLimitT = Math.min(leftLimitT, thisLeftLimitT);
+                thisRightLimitT = Math.max(rightLimitT, thisRightLimitT);
+            }
+            for (var j = 0; j < c[i].length; j++) {
+                var note = track.notes[c[i][j]];
+                if (i === trainMelody) {
+                    if (
+                        (thisLeftLimitT <= note.t)
+                        && (note.t + note.d <= thisRightLimitT)
+                    ) {
+                        if (
+                            (leftLimitT <= note.t)
+                            && (note.t + note.d <= rightLimitT)
+                        ) {
+                            withheldNotes.push(c[i][j]);
+                            lowN = note.n < lowN ? note.n : lowN;
+                            highN = highN < note.n ? note.n : highN;
+                        } else {
+                            trainNotes.push(c[i][j]);
+                        }
+                    }
+                } else {
+                    if (
+                        (thisLeftLimitT <= note.t)
+                        && (note.t + note.d <= thisRightLimitT)
+                    ) {
+                        trainNotes.push(c[i][j]);
+                    }
                 }
-                lowN = note.n < lowN ? note.n : lowN;
-                highN = highN < note.n ? note.n : highN;
             }
         }
+
+        // Earlier notes first, then higher pitched notes first
+        //withheldNotes.sort(function(a, b) {
+        //    var noteA = track.notes[a];
+        //    var noteB = track.notes[b];
+        //    if (noteA.t < noteB.t) {
+        //        return -1;
+        //    } else if (noteB.t < noteA.t) {
+        //        return 1;
+        //    } else {
+        //        if (noteA.n < noteB.n) {
+        //            return 1;
+        //        } else if (noteB.n < noteA.n) {
+        //            return -1;
+        //        } else {
+        //            return 0;
+        //        }
+        //    }
+        //});
+
+        //for (var i = 0; i < track.notes.length; i++) {
+        //    var note = track.notes[i];
+        //    var noteMelody = null;
+        //    for (var j = 0; j < c.length; j++) {
+        //        if (c[j].indexOf(i) !== -1) {
+        //            noteMelody = j;
+        //        }
+        //    }
+        //    if (
+        //        leftImgT < note.t && note.t + note.d < rightImgT // inside image
+        //        && withheldNotes.indexOf(i) === -1
+        //        && removedNotes.indexOf(i) === -1
+        //    ) {
+        //        trainNotes.push(i);
+        //    } else if (withheldNotes.indexOf(i) !== -1) {
+        //        if (bpp === 3) { // XXX for debugging
+        //            trainNotes.push(i);
+        //        }
+        //        lowN = note.n < lowN ? note.n : lowN;
+        //        highN = highN < note.n ? note.n : highN;
+        //    }
+        //}
         // TODO fidget with these numbers
         lowN -= Math.round(Math.random() * 6 + 2);
         highN += Math.round(Math.random() * 6 + 2);
