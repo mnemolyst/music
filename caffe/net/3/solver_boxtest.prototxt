@@ -19,4 +19,4 @@ max_iter: 100000
 snapshot: 1000
 snapshot_prefix: "music/net/3/snapshots/boxtest"
 #solver mode: CPU or GPU
-solver_mode: CPU
+solver_mode: GPU
