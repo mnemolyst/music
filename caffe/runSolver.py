@@ -3,7 +3,7 @@ import pickle
 import lmdb
 from os import path
 from numpy import zeros, isfinite, floor, ceil
-caffeRoot = path.join(sys.path[0], '..')
+caffeRoot = path.join(path.expanduser('~'), 'music_project', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 caffe.set_mode_cpu()

@@ -4,7 +4,7 @@ import glob
 from numpy import zeros, isfinite, floor, ceil, arange, linalg, array, ones
 import matplotlib.pyplot as plt
 import pickle
-caffeRoot = path.join(sys.path[0], '..')
+caffeRoot = path.join(path.expanduser('~'), 'music_project', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 caffe.set_mode_cpu()
@@ -51,11 +51,11 @@ if __name__ == '__main__':
     else:
         for net in e:
             max = 0
-            for p in net[2][:]:
+            for p in [net['trainLoss'], net['testLoss']]:
                 if len(p) > max:
                     max = len(p)
             plt.figure(figsize=(24, 8))
-            for p in net[2][:]:
+            for p in [net['trainLoss'], net['testLoss']]:
                 plt.plot(range(0, max, max/len(p)), p)
             plt.show()
         #l = e[2]
