@@ -16,4 +16,4 @@ display: 100
 max_iter: 100000
 snapshot: 5000
 snapshot_prefix: "music/net/6/snapshots/"
-solver_mode: CPU
+solver_mode: GPU
