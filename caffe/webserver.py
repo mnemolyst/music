@@ -42,7 +42,7 @@ class Handler(BaseHTTPRequestHandler):
                 print 'size', resImg.size
                 for i in range(data.shape[0]): # batch
                     for j in range(data.shape[1]): # channels
-                        print data.astype(np.ubyte)[i, j, ...]
+                        #print data.astype(np.ubyte)[i, j, ...]
                         img = PIL.Image.fromarray(data.astype(np.ubyte)[i, j, ...], 'L')
                         resImg.paste(img, (j * (data.shape[3] + 1), i * (data.shape[2] + 1)))
                 contentType = 'image/png'
