@@ -5,7 +5,7 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'train';
+var trainTest = 'test';
 var makeLmdb = true;
 var makeImages = false;
 var printPoints = false;
