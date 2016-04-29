@@ -35,14 +35,16 @@ class Handler(BaseHTTPRequestHandler):
                 data = net.blobs[layer].data
             elif bop == 'p':
                 data = net.params[layer][0].data
-                data = (data - data.min()) / (data.max() - data.min())
+                print data.min()
+                print data.max()
+                data = 255 * (data - data.min()) / (data.max() - data.min())
                 print 'shape', data.shape
                 n = int(np.ceil(np.sqrt(data.shape[0] * data.shape[1])))
                 resImg = PIL.Image.new('L', (data.shape[3] * data.shape[1], data.shape[2] * data.shape[0]))
                 print 'size', resImg.size
                 for i in range(data.shape[0]):
                     for j in range(data.shape[1]):
-                        print data.astype(np.ubyte)[i, j, ...]
+                        #print data.astype(np.ubyte)[i, j, ...]
                         img = PIL.Image.fromarray(data.astype(np.ubyte)[i, j, ...], 'L')
                         resImg.paste(img, (j * data.shape[3], i * data.shape[2]))
                 contentType = 'image/png'
