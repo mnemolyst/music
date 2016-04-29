@@ -12,6 +12,8 @@ caffeRoot = path.join(path.expanduser('~'), 'music_project', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
 caffe.set_mode_cpu()
+import socket
+print socket.gethostname()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
