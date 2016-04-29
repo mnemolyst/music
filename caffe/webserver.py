@@ -11,9 +11,11 @@ import StringIO
 caffeRoot = path.join(path.expanduser('~'), 'music_project', 'caffe')
 sys.path.insert(1, path.join(caffeRoot, 'python'))
 import caffe
-caffe.set_mode_cpu()
 import socket
-print socket.gethostname()
+if socket.gethostname() == 'anode':
+    caffe.set_mode_cpu()
+else:
+    caffe.set_mode_gpu()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
