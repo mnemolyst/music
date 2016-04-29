@@ -32,6 +32,7 @@ class Handler(BaseHTTPRequestHandler):
                 net = caffe.Net(path.join(caffeRoot, 'music', 'net', version, netPath), caffe.TRAIN)
 
             if bop == 'b':
+                net.forward()
                 data = net.blobs[layer].data
                 print data.min()
                 print data.max()
