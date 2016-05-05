@@ -5,11 +5,11 @@ var childProcess = require('child_process');
 var path = require('path');
 var Promise = require('bluebird');
 
-var trainTest = 'test';
-var makeLmdb = true;
+var trainTest = 'train';
+var makeLmdb = false;
 var makeImages = false;
 var printPoints = false;
-var makeMongo = false;
+var makeMongo = true;
 var bpp = 1; // bytes per pixel
 var fullBright = true;
 var rows = 128;

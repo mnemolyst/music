@@ -35,6 +35,7 @@ for f in midiFiles:
     #        tick += e.tick
     #tempoEvents.sort(key = lambda x: x['tick'])
 
+    pData = []
     for t in pattern:
         tData = []
         time = 0
@@ -43,53 +44,76 @@ for f in midiFiles:
         for e in t:
             time += e.tick
             elapsed = time - lastRes
-            held = {k: NOTE_HOLD for k in atLast if atLast[k] in [NOTE_ON, NOTE_HOLD, NOTE_REAR]}
-            print 'e', e
-            print 'time', time
-            print 'elapsed', elapsed
-            print 'held', held
+            print '\ne', e
+
+            if elapsed >= RES and atLast:
+                n = elapsed / RES
+                r = elapsed % RES
+                lastRes = time - r
+                held = {k: NOTE_HOLD for k in atLast if atLast[k] in [NOTE_ON, NOTE_HOLD, NOTE_REAR]}
+                #print 'n', n
+
+                #print 'atLast', atLast
+                if atLast in vocab:
+                    k = vocab.index(atLast)
+                    #print 'exist', k, atLast
+                else:
+                    vocab.append(atLast.copy())
+                    k = len(vocab) - 1
+                    #print 'new', k, atLast
+                tData.append(k)
+
+                #print 'held', held
+                if n > 1 and held:
+                    if held in vocab:
+                        k = vocab.index(held)
+                        #print 'exist', k, held
+                    else:
+                        vocab.append(held.copy())
+                        k = len(vocab) - 1
+                        #print 'new', k, held
+                    tData += [k] * (n - 1)
+
+                atLast = held
+                #print '\ttData', tData
 
             if isinstance(e, midi.NoteOnEvent):
                 if e.pitch not in atLast:
                     atLast[e.pitch] = NOTE_ON
-                elif atLast[e.pitch] in [NOTE_OFF, NOTE_HOLD]:
-                    atLast[e.pitch] = NOTE_REAR
-                elif atLast[e.pitch] == NOTE_BLIP:
+                elif atLast[e.pitch] in [NOTE_ON, NOTE_BLIP]:
                     atLast[e.pitch] = NOTE_ON
+                elif atLast[e.pitch] in [NOTE_OFF, NOTE_HOLD, NOTE_REAR]:
+                    atLast[e.pitch] = NOTE_REAR
             elif isinstance(e, midi.NoteOffEvent):
                 if e.pitch not in atLast:
-                    atLast[e.pitch] = NOTE_OFF
-                elif atLast[e.pitch] == NOTE_ON:
+                    pass
+                elif atLast[e.pitch] == [NOTE_ON, NOTE_BLIP]:
                     atLast[e.pitch] = NOTE_BLIP
-                elif atLast[e.pitch] in [NOTE_HOLD, NOTE_REAR]:
+                elif atLast[e.pitch] in [NOTE_OFF, NOTE_HOLD, NOTE_REAR]:
                     atLast[e.pitch] = NOTE_OFF
 
-            if elapsed >= RES:
-                n = elapsed / RES
-                r = elapsed % RES
-                print 'n', n
-                print 'r', r
-                lastRes = time - r
-                print 'lastRes', lastRes
-
-                if n > 1:
-                    if held in vocab:
-                        k = vocab.index(held)
-                        print 'exist', k, held
-                    else:
-                        vocab.append(held)
-                        k = len(vocab) - 1
-                        print 'new', k, held
-                    tData += [k] * (n - 1)
-
-                if atLast in vocab:
-                    k = vocab.index(atLast)
-                    print 'exist', k, atLast
-                else:
-                    vocab.append(atLast)
-                    k = len(vocab) - 1
-                    print 'new', k, atLast
-                tData.append(k)
-
-        print 'tData', tData
-    print 'vocab', vocab
+        pData.append(tData)
+    #print 'vocab', vocab
+    outPattern = midi.Pattern()
+    outPattern.resolution = pattern.resolution
+    track = midi.Track()
+    track.append(midi.TrackNameEvent(tick=0, text='JOSH'))
+    for e in pData[1]:
+        tick = RES
+        for f in vocab[e]:
+            if vocab[e][f] == NOTE_ON:
+                track.append(midi.NoteOnEvent(pitch = f, tick = tick, velocity = 127))
+            elif vocab[e][f] == NOTE_OFF:
+                track.append(midi.NoteOffEvent(pitch = f, tick = tick, velocity = 0))
+            elif vocab[e][f] == NOTE_HOLD:
+                pass
+            elif vocab[e][f] == NOTE_REAR:
+                track.append(midi.NoteOnEvent(pitch = f, tick = tick, velocity = 127))
+            elif vocab[e][f] == NOTE_BLIP:
+                print 'blip'
+                #track.append(midi.NoteOnEvent(pitch = f, tick = 0.25 * tick))
+                #track.append(midi.NoteOffEvent(pitch = f, tick = 0.5 * tick))
+            tick = 0
+    track.append(midi.EndOfTrackEvent(tick = 0))
+    outPattern.append(track)
+    midi.write_midifile('test.mid', outPattern)
