@@ -487,6 +487,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         }
                         composition.notes = notes;
                         composition.tempo = data.tempo || 0.5; // seconds per beat
+                        console.log(composition.notes)
 
                         composition.refresh();
                         progressBar.lastSegment.point = progressBar.firstSegment.point;
