@@ -116,7 +116,6 @@ fs.readFile(fileIn, function(err, data) {
 
     var ticksPerBeat = midifile.header.ticksPerBeat;
     var secondsPerTick = tempo / ticksPerBeat;
-    console.log(secondsPerTick);
     var minResScale = secondsPerTick * 16; // horiz scale to make 1/16 sec (1/32 note at 120 bpm) occupy 1 pixel
     tracks.sort(function(a, b) { return a.notes.length > b.notes.length ? -1 : a.notes.length < b.notes.length ? 1 : 0 });
     var track = tracks[0];
