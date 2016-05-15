@@ -4,10 +4,6 @@ import sys
 import random
 from os import path
 
-import theano
-theano.config.device = 'gpu'
-theano.config.floatX = 'float32'
-
 import keras
 import numpy as np
 from keras.models import Sequential
