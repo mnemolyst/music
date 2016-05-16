@@ -418,31 +418,29 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
         var lowN = staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom);
         var highN = staff.yToNote(staff.paths.bounds.top - limits.bounds.top);
 
-        var notes = [];
-        for (var i = 0; i < composition.notes.length; i++) {
+        var data = {
+            notes: composition.notes,
+            limits: [leftLimitT, rightLimitT, lowN, highN],
         }
-        //$.ajax({
-        //    url: '/suggest',
-        //    method: 'POST',
-        //    data: data,
-        //    contentType: 'application/json',
-        //    xhr: function() {
-        //        var xhr = new window.XMLHttpRequest();
-        //        xhr.upload.addEventListener('progress', function(e) {
-        //            if (e.lengthComputable) {
-        //                var pc = e.loaded / e.total * submitLink.bounds.width;
-        //                progressBar.lastSegment.point = progressBar.firstSegment.point.add([pc, 0]);
-        //            }
-        //        });
-        //        return xhr;
-        //    },
-        //    success: function(data) {
-        //        console.log('Submitted');
-        //        if (composition.dbId === null) {
-        //            composition.dbId = data;
-        //        }
-        //    }
-        //});
+        $.ajax({
+            url: '/suggest',
+            method: 'POST',
+            data: JSON.stringify(data),
+            contentType: 'application/json',
+            //xhr: function() {
+            //    var xhr = new window.XMLHttpRequest();
+            //    xhr.upload.addEventListener('progress', function(e) {
+            //        if (e.lengthComputable) {
+            //            var pc = e.loaded / e.total * submitLink.bounds.width;
+            //            progressBar.lastSegment.point = progressBar.firstSegment.point.add([pc, 0]);
+            //        }
+            //    });
+            //    return xhr;
+            //},
+            success: function(data) {
+                console.log(data);
+            }
+        });
     }
 
     $(document).ready(function() {

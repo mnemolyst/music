@@ -3,6 +3,7 @@ var router = express.Router();
 var requirejs = require('requirejs');
 var mongo = require('mongodb').MongoClient;
 var ObjectId = require('mongodb').ObjectID;
+var childProcess = require('child_process');
 
 var mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/music';
 
@@ -80,6 +81,17 @@ router.post('/composition/:id?', function(req, res, next) {
             );
         }
     });
+});
+
+router.post('/suggest', function(req, res, next) {
+    console.log(req.body);
+    //var returnData = childProcess.spawnSync(
+    //    'python',
+    //    ['midiKeras.py', 'predict'],
+    //    { input: req.body.
+    //);
+    //child.stdin.end(prototxt[idx]);
+    res.sendStatus(200);
 });
 
 module.exports = router;

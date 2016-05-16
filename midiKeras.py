@@ -2,6 +2,7 @@ import midi
 import glob
 import sys
 import random
+import json
 from os import path
 
 import keras
@@ -9,6 +10,7 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Embedding, Activation
 from keras.optimizers import RMSprop
+from keras.callbacks import EarlyStopping
 from keras.utils.np_utils import to_categorical
 
 NOTE_ON = 0
@@ -87,7 +89,7 @@ def stripSilence(l):
     return l[startIdx:stopIdx]
 
 def midiRip(midiFile):
-    global keyMap, vocab, resolution, RES
+    global keyMap, resolution, RES
     pattern = midi.read_midifile(midiFile)
     resolution = pattern.resolution
     RES = resolution / 16
@@ -98,7 +100,6 @@ def midiRip(midiFile):
             raise Exception('no offset')
         offset = 0
 
-    lastNoteEnd = 0
     notes = []
     for t in pattern:
         time = 0
@@ -117,19 +118,28 @@ def midiRip(midiFile):
                         'stop': time,
                         'pitch': e.pitch - offset,
                     })
-                    if lastNoteEnd < time:
-                        lastNoteEnd = time
+    return notes
+
+def vocabNotes(notes):
+    global RES, vocab
+    firstTime = None
+    lastTime = None
+    for note in notes:
+        if firstTime == None or note['start'] < firstTime:
+            firstTime = note['start']
+        if lastTime == None or lastTime < note['stop']:
+            lastTime = note['stop']
 
     eData = []
-    for i in range(lastNoteEnd / RES + 1):
+    for i in range((lastTime - firstTime) / RES + 1):
         eData.append({})
     for note in notes:
-        startIdx = note['start'] / RES
-        stopIdx = note['stop'] / RES
+        startIdx = (note['start'] - firstTime) / RES
+        stopIdx = (note['stop'] - firstTime) / RES
 
         if note['pitch'] not in eData[startIdx]:
             eData[startIdx][note['pitch']] = []
-        e = (NOTE_ON, note['start'] - startIdx * RES)
+        e = (NOTE_ON, note['start'] - firstTime - startIdx * RES)
         if e not in eData[startIdx][note['pitch']]:
             eData[startIdx][note['pitch']].append(e)
 
@@ -142,10 +152,11 @@ def midiRip(midiFile):
 
         if note['pitch'] not in eData[stopIdx]:
             eData[stopIdx][note['pitch']] = []
-        e = (NOTE_OFF, note['stop'] - stopIdx * RES)
+        e = (NOTE_OFF, note['stop'] - firstTime - stopIdx * RES)
         if e not in eData[stopIdx][note['pitch']]:
             eData[stopIdx][note['pitch']].append(e)
-    pData = []
+
+    vData = []
     for e in eData:
         for p in e:
             e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
@@ -154,9 +165,9 @@ def midiRip(midiFile):
         else:
             vocab.append(e.copy())
             k = len(vocab) - 1
-        pData.append(k)
-    pData = stripSilence(pData)
-    return pData
+        vData.append(k)
+    vData = stripSilence(vData)
+    return vData
 
 def midiOut(tData, fileName):
     global vocab, resolution, RES
@@ -216,17 +227,9 @@ def genModel():
     rms = RMSprop(lr = 0.001)
     model.compile(loss = 'categorical_crossentropy', optimizer = rms)
 
-def train(data, labels, nb_epoch = 1):
-    global model
-    model.fit(data, labels, nb_epoch = nb_epoch, batch_size = 32)
-
-def test(data, labels):
-    global model
-    testLoss = model.evaluate(data, labels, batch_size = 16)
-    return testLoss
-
 doRewrite = False
 isTrainFile = True
+doPredict = False
 trainFiles = []
 testFiles = []
 for arg in sys.argv[1:]:
@@ -236,6 +239,8 @@ for arg in sys.argv[1:]:
         isTrainFile = False
     elif arg == 'rewrite':
         doRewrite = True
+    elif arg == 'predict':
+        doPredict = True
     elif path.exists(arg):
         if isTrainFile:
             trainFiles.append(arg)
@@ -245,7 +250,7 @@ for arg in sys.argv[1:]:
 trainData = []
 for f in trainFiles:
     print f
-    pData = midiRip(f)
+    vData = vocabNotes(midiRip(f))
     trainData.append(pData)
     #print pData
     print 'len pData', len(pData)
@@ -257,7 +262,7 @@ for f in trainFiles:
 testData = []
 for f in testFiles:
     print f
-    pData = midiRip(f)
+    vData = vocabNotes(midiRip(f))
     testData.append(pData)
     #print pData
     print 'len pData', len(pData)
@@ -266,12 +271,17 @@ for f in testFiles:
     if doRewrite:
         midiOut(pData, 'midi/rewrite/' + path.basename(f))
 
+if doPredict:
+    notesJson = json.load(sys.stdin)
+    with open(sys.stdout, 'w') as f:
+        f.write(notesJson)
+
 if len(trainData) and not doRewrite:
     genModel()
     (fTrainData, fTrainLabels) = formatData(trainData, 128, 512)
-    train(fTrainData, fTrainLabels, 10)
-
-if len(testData) and not doRewrite:
-    (fTestData, fTestLabels) = formatData(testData, 128, 512)
-    testScore = test(fTestData, fTestLabels)
-    print testScore
+    if len(testData):
+        (fTestData, fTestLabels) = formatData(testData, 128, 512)
+        earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min')
+        model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
+    else:
+        model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
