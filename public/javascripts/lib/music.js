@@ -413,14 +413,21 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     SuggestRequest.prototype.submit = function() {
         var limits = this.parent.children['limits'];
-        var leftLimitT = (limits.bounds.left - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
-        var rightLimitT = (limits.bounds.right - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
-        var lowN = staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom);
-        var highN = staff.yToNote(staff.paths.bounds.top - limits.bounds.top);
+        var leftLimitT = Math.round((limits.bounds.left - staff.paths.bounds.left) / staff.timeSpacing + leftTime);
+        var rightLimitT = Math.round((limits.bounds.right - staff.paths.bounds.left) / staff.timeSpacing + leftTime);
+        var lowN = Math.round(staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom));
+        var highN = Math.round(staff.yToNote(staff.paths.bounds.top - limits.bounds.top));
 
         var data = {
-            notes: composition.notes,
+            notes: [],
             limits: [leftLimitT, rightLimitT, lowN, highN],
+        }
+        for (var i = 0; i < composition.notes.length; i++) {
+            data.notes.push({
+                t: composition.notes[i].t,
+                d: composition.notes[i].d,
+                n: composition.notes[i].note,
+            });
         }
         $.ajax({
             url: '/suggest',

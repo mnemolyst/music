@@ -2,15 +2,13 @@ import midi
 import glob
 import sys
 import random
-import json
 from os import path
 
 import keras
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, LSTM, Embedding, Activation
+from keras.layers import Embedding, LSTM, Dense, Activation
 from keras.optimizers import RMSprop
-from keras.callbacks import EarlyStopping
 from keras.utils.np_utils import to_categorical
 
 NOTE_ON = 0
@@ -64,224 +62,159 @@ keyMap = {
     'lesley_.mid':     77, # f maj
     'susan_.mid':      80, # ab min
 }
-vocab = [None]
-model = None
-resolution = None
-RES = None
 
-def stripSilence(l):
-    global vocab
-    if {} in vocab:
-        sIdx = vocab.index({})
-    else:
-        return l
+class MidiKeras:
+    def __init__(self, resolution = None):
+        self.resolution = resolution
+        if resolution:
+            self.RES = resolution / 16
 
-    startIdx = 0
-    stopIdx = len(l)
-    for i in range(len(l)):
-        if l[i] != sIdx:
-            startIdx = i
-            break
-    for i in reversed(range(len(l))):
-        if l[i] != sIdx:
-            stopIdx = i + 1
-            break
-    return l[startIdx:stopIdx]
+    def stripSilence(self, l, silence):
+        startIdx = 0
+        stopIdx = len(l)
+        for i in range(len(l)):
+            if l[i] != silence:
+                startIdx = i
+                break
+        for i in reversed(range(len(l))):
+            if l[i] != silence:
+                stopIdx = i + 1
+                break
+        return l[startIdx:stopIdx]
 
-def midiRip(midiFile):
-    global keyMap, resolution, RES
-    pattern = midi.read_midifile(midiFile)
-    resolution = pattern.resolution
-    RES = resolution / 16
-    if not doRewrite and path.basename(midiFile) in keyMap:
-        offset = keyMap[path.basename(midiFile)]
-    else:
-        if not doRewrite:
-            raise Exception('no offset')
-        offset = 0
-
-    notes = []
-    for t in pattern:
-        time = 0
-        notesOn = {}
-        for e in t:
-            #print e
-            time += e.tick
-            if isinstance(e, midi.NoteOnEvent) and e.velocity > 0:
-                key = (e.channel, e.pitch - offset)
-                notesOn[key] = time
-            elif isinstance(e, midi.NoteOffEvent) or (isinstance(e, midi.NoteOnEvent) and e.velocity == 0):
-                key = (e.channel, e.pitch - offset)
-                if key in notesOn:
-                    notes.append({
-                        'start': notesOn[key],
-                        'stop': time,
-                        'pitch': e.pitch - offset,
-                    })
-    return notes
-
-def vocabNotes(notes):
-    global RES, vocab
-    firstTime = None
-    lastTime = None
-    for note in notes:
-        if firstTime == None or note['start'] < firstTime:
-            firstTime = note['start']
-        if lastTime == None or lastTime < note['stop']:
-            lastTime = note['stop']
-
-    eData = []
-    for i in range((lastTime - firstTime) / RES + 1):
-        eData.append({})
-    for note in notes:
-        startIdx = (note['start'] - firstTime) / RES
-        stopIdx = (note['stop'] - firstTime) / RES
-
-        if note['pitch'] not in eData[startIdx]:
-            eData[startIdx][note['pitch']] = []
-        e = (NOTE_ON, note['start'] - firstTime - startIdx * RES)
-        if e not in eData[startIdx][note['pitch']]:
-            eData[startIdx][note['pitch']].append(e)
-
-        for i in range(startIdx + 1, stopIdx):
-            if note['pitch'] not in eData[i]:
-                eData[i][note['pitch']] = []
-            e = (NOTE_HOLD, 0)
-            if e not in eData[i][note['pitch']]:
-                eData[i][note['pitch']].append(e)
-
-        if note['pitch'] not in eData[stopIdx]:
-            eData[stopIdx][note['pitch']] = []
-        e = (NOTE_OFF, note['stop'] - firstTime - stopIdx * RES)
-        if e not in eData[stopIdx][note['pitch']]:
-            eData[stopIdx][note['pitch']].append(e)
-
-    vData = []
-    for e in eData:
-        for p in e:
-            e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
-        if e in vocab:
-            k = vocab.index(e)
+    def midiRip(self, midiFile):
+        global keyMap
+        pattern = midi.read_midifile(midiFile)
+        self.resolution = pattern.resolution
+        self.RES = self.resolution / 16
+        if path.basename(midiFile) in keyMap:
+            offset = keyMap[path.basename(midiFile)]
         else:
-            vocab.append(e.copy())
-            k = len(vocab) - 1
-        vData.append(k)
-    vData = stripSilence(vData)
-    return vData
+            offset = 0
 
-def midiOut(tData, fileName):
-    global vocab, resolution, RES
-    outPattern = midi.Pattern()
-    outPattern.resolution = resolution
-    track = midi.Track()
-    track.append(midi.TrackNameEvent(tick=0, text='JOSH'))
-    track.append(midi.SetTempoEvent(tick=0, bpm=120))
-    tick = 0
-    for k in tData:
-        e = vocab[k]
-        tick += RES
-        l = max([len(e[x]) for x in e])
-        for t in range(l):
-            if tick == 0:
-                tick = RES / l
-            for f in e:
-                if t < len(e[f]):
-                    if e[f][t] == NOTE_ON:
-                        track.append(midi.NoteOnEvent(pitch = f, tick = tick, velocity = 127))
-                        tick = 0
-                    elif e[f][t] == NOTE_OFF:
-                        track.append(midi.NoteOffEvent(pitch = f, tick = tick, velocity = 127))
-                        tick = 0
-    track.append(midi.EndOfTrackEvent(tick = 0))
-    outPattern.append(track)
-    midi.write_midifile(fileName, outPattern)
+        notes = []
+        for t in pattern:
+            time = 0
+            notesOn = {}
+            for e in t:
+                #print e
+                time += e.tick
+                if isinstance(e, midi.NoteOnEvent) and e.velocity > 0:
+                    key = (e.channel, e.pitch - offset)
+                    notesOn[key] = time
+                elif isinstance(e, midi.NoteOffEvent) or (isinstance(e, midi.NoteOnEvent) and e.velocity == 0):
+                    key = (e.channel, e.pitch - offset)
+                    if key in notesOn:
+                        notes.append({
+                            't': notesOn[key],
+                            'd': time - notesOn[key],
+                            'n': e.pitch - offset,
+                        })
+        return notes
 
-def formatData(data, minSeq, maxSeq):
-    global vocab, model
-    nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data])# * 2
-    fData = np.zeros((nData, maxSeq))
-    fLabels = np.zeros((nData, 1))
-    p = 0
-    for i in data:
-        for j in range(minSeq, min(maxSeq + 1, len(i))):
-            fData[p, :j] = i[:j]
-            fLabels[p] = i[j]
-            #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
-            #fLabels[p + 1] = i[-j - 1]
-            p += 1
-        for j in range(len(i) - maxSeq - 1):
-            fData[p] = i[j + 1 : maxSeq + j + 1]
-            fLabels[p] = i[maxSeq + j + 1]
-            p += 1
-    fLabels = to_categorical(fLabels.astype('int'), len(vocab))
-    return (fData, fLabels)
+    def vocabNotes(self, notes, vocab):
+        firstTime = None
+        lastTime = None
+        for note in notes:
+            if firstTime == None or note['t'] < firstTime:
+                firstTime = note['t']
+            if lastTime == None or lastTime < note['t'] + note['d']:
+                lastTime = note['t'] + note['d']
 
-def genModel():
-    global vocab, model
-    model = Sequential()
-    model.add(Embedding(len(vocab), 64, mask_zero = True))
-    model.add(LSTM(128))
-    model.add(Dense(128))
-    model.add(Dense(len(vocab)))
-    model.add(Activation('softmax'))
-    rms = RMSprop(lr = 0.001)
-    model.compile(loss = 'categorical_crossentropy', optimizer = rms)
+        eData = []
+        for i in range((lastTime - firstTime) / self.RES + 1):
+            eData.append({})
+        for note in notes:
+            startIdx = (note['t'] - firstTime) / self.RES
+            stopIdx = (note['t'] + note['d'] - firstTime) / self.RES
 
-doRewrite = False
-isTrainFile = True
-doPredict = False
-trainFiles = []
-testFiles = []
-for arg in sys.argv[1:]:
-    if arg == 'train':
-        isTrainFile = True
-    elif arg == 'test':
-        isTrainFile = False
-    elif arg == 'rewrite':
-        doRewrite = True
-    elif arg == 'predict':
-        doPredict = True
-    elif path.exists(arg):
-        if isTrainFile:
-            trainFiles.append(arg)
-        else:
-            testFiles.append(arg)
+            if note['n'] not in eData[startIdx]:
+                eData[startIdx][note['n']] = []
+            e = (NOTE_ON, note['t'] - firstTime - startIdx * self.RES)
+            if e not in eData[startIdx][note['n']]:
+                eData[startIdx][note['n']].append(e)
 
-trainData = []
-for f in trainFiles:
-    print f
-    vData = vocabNotes(midiRip(f))
-    trainData.append(pData)
-    #print pData
-    print 'len pData', len(pData)
-    #print vocab
-    print 'len vocab', len(vocab)
-    if doRewrite:
-        midiOut(pData, 'midi/rewrite/' + path.basename(f))
+            for i in range(startIdx + 1, stopIdx):
+                if note['n'] not in eData[i]:
+                    eData[i][note['n']] = []
+                e = (NOTE_HOLD, 0)
+                if e not in eData[i][note['n']]:
+                    eData[i][note['n']].append(e)
 
-testData = []
-for f in testFiles:
-    print f
-    vData = vocabNotes(midiRip(f))
-    testData.append(pData)
-    #print pData
-    print 'len pData', len(pData)
-    #print vocab
-    print 'len vocab', len(vocab)
-    if doRewrite:
-        midiOut(pData, 'midi/rewrite/' + path.basename(f))
+            if note['n'] not in eData[stopIdx]:
+                eData[stopIdx][note['n']] = []
+            e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * self.RES)
+            if e not in eData[stopIdx][note['n']]:
+                eData[stopIdx][note['n']].append(e)
 
-if doPredict:
-    notesJson = json.load(sys.stdin)
-    with open(sys.stdout, 'w') as f:
-        f.write(notesJson)
+        vData = []
+        for e in eData:
+            for p in e:
+                e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
+            if e in vocab:
+                k = vocab.index(e)
+            else:
+                vocab.append(e.copy())
+                k = len(vocab) - 1
+            vData.append(k)
 
-if len(trainData) and not doRewrite:
-    genModel()
-    (fTrainData, fTrainLabels) = formatData(trainData, 128, 512)
-    if len(testData):
-        (fTestData, fTestLabels) = formatData(testData, 128, 512)
-        earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min')
-        model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
-    else:
-        model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
+        if {} in vocab:
+            vData = self.stripSilence(vData, vocab.index({}))
+
+        return (vData, vocab)
+
+    def midiOut(self, tData, fileName, vocab):
+        outPattern = midi.Pattern()
+        outPattern.resolution = self.resolution
+        track = midi.Track()
+        track.append(midi.TrackNameEvent(tick=0, text='JOSH'))
+        track.append(midi.SetTempoEvent(tick=0, bpm=120))
+        tick = 0
+        for k in tData:
+            e = vocab[k]
+            tick += self.RES
+            l = max([len(e[x]) for x in e])
+            for t in range(l):
+                if tick == 0:
+                    tick = self.RES / l
+                for f in e:
+                    if t < len(e[f]):
+                        if e[f][t] == NOTE_ON:
+                            track.append(midi.NoteOnEvent(pitch = f, tick = tick, velocity = 127))
+                            tick = 0
+                        elif e[f][t] == NOTE_OFF:
+                            track.append(midi.NoteOffEvent(pitch = f, tick = tick, velocity = 127))
+                            tick = 0
+        track.append(midi.EndOfTrackEvent(tick = 0))
+        outPattern.append(track)
+        midi.write_midifile(fileName, outPattern)
+
+    def formatData(self, data, minSeq, maxSeq, lenVocab):
+        nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data])# * 2
+        fData = np.zeros((nData, maxSeq))
+        fLabels = np.zeros((nData, 1))
+        p = 0
+        for i in data:
+            for j in range(minSeq, min(maxSeq + 1, len(i))):
+                fData[p, :j] = i[:j]
+                fLabels[p] = i[j]
+                #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
+                #fLabels[p + 1] = i[-j - 1]
+                p += 1
+            for j in range(len(i) - maxSeq - 1):
+                fData[p] = i[j + 1 : maxSeq + j + 1]
+                fLabels[p] = i[maxSeq + j + 1]
+                p += 1
+        fLabels = to_categorical(fLabels.astype('int'), lenVocab)
+        return (fData, fLabels)
+
+    def genModel(self, lenVocab):
+        model = Sequential()
+        model.add(Embedding(lenVocab, 64, mask_zero = True))
+        model.add(LSTM(128))
+        model.add(Dense(128))
+        model.add(Dense(lenVocab))
+        model.add(Activation('softmax'))
+        rms = RMSprop(lr = 0.001)
+        model.compile(optimizer = rms, loss = 'categorical_crossentropy', metrics = ['accuracy'])
+        return model

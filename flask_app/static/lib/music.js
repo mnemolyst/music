@@ -413,36 +413,41 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
     }
     SuggestRequest.prototype.submit = function() {
         var limits = this.parent.children['limits'];
-        var leftLimitT = (limits.bounds.left - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
-        var rightLimitT = (limits.bounds.right - staff.paths.bounds.left) / staff.timeSpacing + leftTime;
-        var lowN = staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom);
-        var highN = staff.yToNote(staff.paths.bounds.top - limits.bounds.top);
+        var leftLimitT = Math.round((limits.bounds.left - staff.paths.bounds.left) / staff.timeSpacing + leftTime);
+        var rightLimitT = Math.round((limits.bounds.right - staff.paths.bounds.left) / staff.timeSpacing + leftTime);
+        var lowN = Math.round(staff.yToNote(staff.paths.bounds.top - limits.bounds.bottom));
+        var highN = Math.round(staff.yToNote(staff.paths.bounds.top - limits.bounds.top));
 
-        var notes = [];
-        for (var i = 0; i < composition.notes.length; i++) {
+        var data = {
+            notes: [],
+            limits: [leftLimitT, rightLimitT, lowN, highN],
         }
-        //$.ajax({
-        //    url: '/suggest',
-        //    method: 'POST',
-        //    data: data,
-        //    contentType: 'application/json',
-        //    xhr: function() {
-        //        var xhr = new window.XMLHttpRequest();
-        //        xhr.upload.addEventListener('progress', function(e) {
-        //            if (e.lengthComputable) {
-        //                var pc = e.loaded / e.total * submitLink.bounds.width;
-        //                progressBar.lastSegment.point = progressBar.firstSegment.point.add([pc, 0]);
-        //            }
-        //        });
-        //        return xhr;
-        //    },
-        //    success: function(data) {
-        //        console.log('Submitted');
-        //        if (composition.dbId === null) {
-        //            composition.dbId = data;
-        //        }
-        //    }
-        //});
+        for (var i = 0; i < composition.notes.length; i++) {
+            data.notes.push({
+                t: composition.notes[i].t,
+                d: composition.notes[i].d,
+                n: composition.notes[i].note,
+            });
+        }
+        $.ajax({
+            url: '/suggest',
+            method: 'POST',
+            data: JSON.stringify(data),
+            contentType: 'application/json',
+            //xhr: function() {
+            //    var xhr = new window.XMLHttpRequest();
+            //    xhr.upload.addEventListener('progress', function(e) {
+            //        if (e.lengthComputable) {
+            //            var pc = e.loaded / e.total * submitLink.bounds.width;
+            //            progressBar.lastSegment.point = progressBar.firstSegment.point.add([pc, 0]);
+            //        }
+            //    });
+            //    return xhr;
+            //},
+            success: function(data) {
+                console.log(data);
+            }
+        });
     }
 
     $(document).ready(function() {
@@ -748,27 +753,27 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
 
         var compositionLinks = new Group();
         var iterPos = new Point(0, 0);
-        //for (var i = 0; i < dbCompositions.length; i++) {
-        //    var pt = new PointText({
-        //        strokeColor: 'black',
-        //        fontSize: 20,
-        //        content: dbCompositions[i].name,
-        //        point: iterPos,
-        //    });
-        //    pt.onClick = (function() {
-        //        var id = dbCompositions[i].id;
-        //        return function() {
-        //            loadComposition(id);
-        //        }
-        //    })()
-        //    compositionLinks.addChild(pt);
-        //    if (compositionLinks.children.length % 12 === 0) {
-        //        iterPos = iterPos.add([0, pt.bounds.height + 5]);
-        //        iterPos.x = 0;
-        //    } else {
-        //        iterPos = iterPos.add([pt.bounds.width + 10, 0]);
-        //    }
-        //}
+        for (var i = 0; i < dbCompositions.length; i++) {
+            var pt = new PointText({
+                strokeColor: 'black',
+                fontSize: 20,
+                content: dbCompositions[i].name,
+                point: iterPos,
+            });
+            pt.onClick = (function() {
+                var id = dbCompositions[i].id;
+                return function() {
+                    loadComposition(id);
+                }
+            })()
+            compositionLinks.addChild(pt);
+            if (compositionLinks.children.length % 12 === 0) {
+                iterPos = iterPos.add([0, pt.bounds.height + 5]);
+                iterPos.x = 0;
+            } else {
+                iterPos = iterPos.add([pt.bounds.width + 10, 0]);
+            }
+        }
         compositionLinks.pivot = compositionLinks.bounds.bottomRight;
 
         var downloadLink = new PointText({
