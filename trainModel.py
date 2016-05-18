@@ -10,7 +10,6 @@ if __name__ == '__main__':
     isTrainFile = True
     trainFiles = []
     testFiles = []
-    vocab = [None]
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
@@ -33,35 +32,32 @@ if __name__ == '__main__':
     trainData = []
     for f in trainFiles:
         print f
-        (vData, vocab) = midiKeras.vocabNotes(midiKeras.midiRip(f), vocab)
+        (notes, resolution) = midiKeras.midiRip(f)
+        vData = midiKeras.vocabNotes(notes, resolution / 16)
         trainData.append(vData)
-        #print vData
         print 'len vData', len(vData)
-        #print vocab
-        print 'len vocab', len(vocab)
         if doRewrite:
-            midiOut(vData, 'midi/rewrite/' + path.basename(f))
+            midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
     testData = []
     for f in testFiles:
         print f
-        (vData, vocab) = midiKeras.vocabNotes(midiKeras.midiRip(f), vocab)
+        (notes, resolution) = midiKeras.midiRip(f)
+        vData = midiKeras.vocabNotes(notes, resolution / 16)
         testData.append(vData)
-        #print vData
         print 'len vData', len(vData)
-        #print vocab
-        print 'len vocab', len(vocab)
         if doRewrite:
-            midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f))
+            midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
+    print 'len vocab', len(midiKeras.vocab)
     with open(path.join('keras_models', 'vocab'), 'w') as f:
-        f.write(pickle.dumps(vocab))
+        f.write(pickle.dumps(midiKeras.vocab))
 
     if len(trainData) and not doRewrite:
-        model = midiKeras.genModel(len(vocab))
-        (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 128, 512, len(vocab))
+        model = midiKeras.genModel()
+        (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 128, 512)
         if len(testData):
-            (fTestData, fTestLabels) = midiKeras.formatData(testData, 128, 512, len(vocab))
+            (fTestData, fTestLabels) = midiKeras.formatData(testData, 128, 512)
             earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min')
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:

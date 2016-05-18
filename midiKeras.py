@@ -64,10 +64,8 @@ keyMap = {
 }
 
 class MidiKeras:
-    def __init__(self, resolution = None):
-        self.resolution = resolution
-        if resolution:
-            self.RES = resolution / 16
+    def __init__(self):
+        self.vocab = [None]
 
     def stripSilence(self, l, silence):
         startIdx = 0
@@ -85,8 +83,6 @@ class MidiKeras:
     def midiRip(self, midiFile):
         global keyMap
         pattern = midi.read_midifile(midiFile)
-        self.resolution = pattern.resolution
-        self.RES = self.resolution / 16
         if path.basename(midiFile) in keyMap:
             offset = keyMap[path.basename(midiFile)]
         else:
@@ -110,9 +106,9 @@ class MidiKeras:
                             'd': time - notesOn[key],
                             'n': e.pitch - offset,
                         })
-        return notes
+        return (notes, pattern.resolution)
 
-    def vocabNotes(self, notes, vocab):
+    def vocabNotes(self, notes, res):
         firstTime = None
         lastTime = None
         for note in notes:
@@ -122,15 +118,15 @@ class MidiKeras:
                 lastTime = note['t'] + note['d']
 
         eData = []
-        for i in range((lastTime - firstTime) / self.RES + 1):
+        for i in range((lastTime - firstTime) / res + 1):
             eData.append({})
         for note in notes:
-            startIdx = (note['t'] - firstTime) / self.RES
-            stopIdx = (note['t'] + note['d'] - firstTime) / self.RES
+            startIdx = (note['t'] - firstTime) / res
+            stopIdx = (note['t'] + note['d'] - firstTime) / res
 
             if note['n'] not in eData[startIdx]:
                 eData[startIdx][note['n']] = []
-            e = (NOTE_ON, note['t'] - firstTime - startIdx * self.RES)
+            e = (NOTE_ON, note['t'] - firstTime - startIdx * res)
             if e not in eData[startIdx][note['n']]:
                 eData[startIdx][note['n']].append(e)
 
@@ -143,7 +139,7 @@ class MidiKeras:
 
             if note['n'] not in eData[stopIdx]:
                 eData[stopIdx][note['n']] = []
-            e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * self.RES)
+            e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * res)
             if e not in eData[stopIdx][note['n']]:
                 eData[stopIdx][note['n']].append(e)
 
@@ -151,32 +147,32 @@ class MidiKeras:
         for e in eData:
             for p in e:
                 e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
-            if e in vocab:
-                k = vocab.index(e)
+            if e in self.vocab:
+                k = self.vocab.index(e)
             else:
-                vocab.append(e.copy())
-                k = len(vocab) - 1
+                self.vocab.append(e.copy())
+                k = len(self.vocab) - 1
             vData.append(k)
 
-        if {} in vocab:
-            vData = self.stripSilence(vData, vocab.index({}))
+        if {} in self.vocab:
+            vData = self.stripSilence(vData, self.vocab.index({}))
 
-        return (vData, vocab)
+        return vData
 
-    def midiOut(self, tData, fileName, vocab):
+    def midiOut(self, vData, fileName, resolution):
         outPattern = midi.Pattern()
-        outPattern.resolution = self.resolution
+        outPattern.resolution = resolution
         track = midi.Track()
         track.append(midi.TrackNameEvent(tick=0, text='JOSH'))
         track.append(midi.SetTempoEvent(tick=0, bpm=120))
         tick = 0
         for k in tData:
-            e = vocab[k]
-            tick += self.RES
+            e = self.vocab[k]
+            tick += res
             l = max([len(e[x]) for x in e])
             for t in range(l):
                 if tick == 0:
-                    tick = self.RES / l
+                    tick = res / l
                 for f in e:
                     if t < len(e[f]):
                         if e[f][t] == NOTE_ON:
@@ -189,14 +185,15 @@ class MidiKeras:
         outPattern.append(track)
         midi.write_midifile(fileName, outPattern)
 
-    def formatData(self, data, minSeq, maxSeq, lenVocab):
+    def formatData(self, data, minSeq, maxSeq):
         nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data])# * 2
         fData = np.zeros((nData, maxSeq))
-        fLabels = np.zeros((nData, 1))
+        fLabels = np.zeros((nData, 128))
         p = 0
         for i in data:
             for j in range(minSeq, min(maxSeq + 1, len(i))):
                 fData[p, :j] = i[:j]
+                for # TODO which notes are active on next frame?
                 fLabels[p] = i[j]
                 #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
                 #fLabels[p + 1] = i[-j - 1]
@@ -205,16 +202,16 @@ class MidiKeras:
                 fData[p] = i[j + 1 : maxSeq + j + 1]
                 fLabels[p] = i[maxSeq + j + 1]
                 p += 1
-        fLabels = to_categorical(fLabels.astype('int'), lenVocab)
+        #fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
         return (fData, fLabels)
 
-    def genModel(self, lenVocab):
+    def genModel(self):
         model = Sequential()
-        model.add(Embedding(lenVocab, 64, mask_zero = True))
+        model.add(Embedding(len(self.vocab), 64, mask_zero = True))
         model.add(LSTM(128))
         model.add(Dense(128))
-        model.add(Dense(lenVocab))
-        model.add(Activation('softmax'))
+        #model.add(Dense(len(self.vocab)))
+        model.add(Activation('hard_sigmoid'))
         rms = RMSprop(lr = 0.001)
-        model.compile(optimizer = rms, loss = 'categorical_crossentropy', metrics = ['accuracy'])
+        model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
         return model
