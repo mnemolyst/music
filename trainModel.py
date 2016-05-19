@@ -49,6 +49,7 @@ if __name__ == '__main__':
         if doRewrite:
             midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
+    #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
     with open(path.join('keras_models', 'vocab'), 'w') as f:
         f.write(pickle.dumps(midiKeras.vocab))

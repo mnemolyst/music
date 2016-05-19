@@ -83,7 +83,7 @@ class MidiKeras:
     def midiRip(self, midiFile):
         global keyMap
         pattern = midi.read_midifile(midiFile)
-        if path.basename(midiFile) in keyMap:
+        if False and path.basename(midiFile) in keyMap:
             offset = keyMap[path.basename(midiFile)]
         else:
             offset = 0
@@ -193,14 +193,13 @@ class MidiKeras:
         for i in data:
             for j in range(minSeq, min(maxSeq + 1, len(i))):
                 fData[p, :j] = i[:j]
-                for # TODO which notes are active on next frame?
-                fLabels[p] = i[j]
+                fLabels[p] = [int(x in self.vocab[i[j]]) for x in range(128)]
                 #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
                 #fLabels[p + 1] = i[-j - 1]
                 p += 1
             for j in range(len(i) - maxSeq - 1):
                 fData[p] = i[j + 1 : maxSeq + j + 1]
-                fLabels[p] = i[maxSeq + j + 1]
+                fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]]) for x in range(128)]
                 p += 1
         #fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
         return (fData, fLabels)
@@ -211,7 +210,7 @@ class MidiKeras:
         model.add(LSTM(128))
         model.add(Dense(128))
         #model.add(Dense(len(self.vocab)))
-        model.add(Activation('hard_sigmoid'))
+        model.add(Activation('sigmoid'))
         rms = RMSprop(lr = 0.001)
         model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
         return model
