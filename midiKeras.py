@@ -83,8 +83,8 @@ class MidiKeras:
     def midiRip(self, midiFile):
         global keyMap
         pattern = midi.read_midifile(midiFile)
-        if False and path.basename(midiFile) in keyMap:
-            offset = keyMap[path.basename(midiFile)]
+        if path.basename(midiFile) in keyMap:
+            offset = keyMap[path.basename(midiFile)] - 69
         else:
             offset = 0
 
