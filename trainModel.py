@@ -1,15 +1,19 @@
 import midiKeras as mk
 import sys
 from os import path
+from time import strftime
 import pickle
 from keras.callbacks import EarlyStopping
+from keras.models import model_from_json
+from keras.optimizers import RMSprop
 
 if __name__ == '__main__':
-    midiKeras = mk.MidiKeras()
     doRewrite = False
     isTrainFile = True
     trainFiles = []
     testFiles = []
+    model = None
+    vocab = [None]
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
@@ -22,6 +26,16 @@ if __name__ == '__main__':
             with open(sys.argv[i + 1]) as f:
                 vocab = pickle.loads(f.read())
             i += 1
+        elif sys.argv[i] == 'model':
+            prefix = sys.argv[i + 1]
+            with open(prefix + '-struct.json') as f:
+                model = model_from_json(f.read())
+            model.load_weights(prefix + '-weights.h5')
+            rms = RMSprop(lr = 0.001)
+            model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
+            with open(prefix + '-vocab.pickle') as f:
+                vocab = pickle.loads(f.read())
+            i += 1
         elif path.exists(sys.argv[i]):
             if isTrainFile:
                 trainFiles.append(sys.argv[i])
@@ -30,6 +44,7 @@ if __name__ == '__main__':
         i += 1
 
     trainData = []
+    midiKeras = mk.MidiKeras(vocab)
     for f in trainFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
@@ -55,7 +70,8 @@ if __name__ == '__main__':
         f.write(pickle.dumps(midiKeras.vocab))
 
     if len(trainData) and not doRewrite:
-        model = midiKeras.genModel()
+        if model == None:
+            model = midiKeras.genModel()
         (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 128, 512)
         if len(testData):
             (fTestData, fTestLabels) = midiKeras.formatData(testData, 128, 512)
@@ -63,3 +79,6 @@ if __name__ == '__main__':
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
+        model.save_weights(path.join('keras_models', strftime('%d-%b-%H:%M') + '-weights.h5'))
+        with open(path.join('keras_models', strftime('%d-%b-%H:%M') + '-struct.json'), 'w') as f:
+            f.write(model.to_json())

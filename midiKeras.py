@@ -64,8 +64,8 @@ keyMap = {
 }
 
 class MidiKeras:
-    def __init__(self):
-        self.vocab = [None]
+    def __init__(self, vocab = [None]):
+        self.vocab = vocab
 
     def stripSilence(self, l, silence):
         startIdx = 0
@@ -193,12 +193,14 @@ class MidiKeras:
         for i in data:
             for j in range(minSeq, min(maxSeq + 1, len(i))):
                 fData[p, :j] = i[:j]
+                #fLabels[p] = [int(x in self.vocab[i[j]] and self.vocab[i[j]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
                 fLabels[p] = [int(x in self.vocab[i[j]]) for x in range(128)]
                 #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
                 #fLabels[p + 1] = i[-j - 1]
                 p += 1
             for j in range(len(i) - maxSeq - 1):
                 fData[p] = i[j + 1 : maxSeq + j + 1]
+                #fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]] and self.vocab[i[maxSeq + j + 1]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
                 fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]]) for x in range(128)]
                 p += 1
         #fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
@@ -208,8 +210,8 @@ class MidiKeras:
         model = Sequential()
         model.add(Embedding(len(self.vocab), 64, mask_zero = True))
         model.add(LSTM(128))
+        #model.add(Dense(128))
         model.add(Dense(128))
-        #model.add(Dense(len(self.vocab)))
         model.add(Activation('sigmoid'))
         rms = RMSprop(lr = 0.001)
         model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
