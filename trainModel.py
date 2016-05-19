@@ -64,9 +64,10 @@ if __name__ == '__main__':
         if doRewrite:
             midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
+    prefix = strftime('%d-%b-%H:%M')
     #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
-    with open(path.join('keras_models', 'vocab'), 'w') as f:
+    with open(path.join('keras_models', prefix + '-vocab.pickle'), 'w') as f:
         f.write(pickle.dumps(midiKeras.vocab))
 
     if len(trainData) and not doRewrite:
@@ -79,6 +80,6 @@ if __name__ == '__main__':
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
-        model.save_weights(path.join('keras_models', strftime('%d-%b-%H:%M') + '-weights.h5'))
-        with open(path.join('keras_models', strftime('%d-%b-%H:%M') + '-struct.json'), 'w') as f:
+        model.save_weights(path.join('keras_models', prefix + '-weights.h5'))
+        with open(path.join('keras_models', prefix + '-struct.json'), 'w') as f:
             f.write(model.to_json())
