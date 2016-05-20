@@ -186,23 +186,27 @@ class MidiKeras:
         midi.write_midifile(fileName, outPattern)
 
     def formatData(self, data, minSeq, maxSeq):
-        nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data])# * 2
+        nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data]) * 2
         fData = np.zeros((nData, maxSeq))
         fLabels = np.zeros((nData, 128))
         p = 0
         for i in data:
             for j in range(minSeq, min(maxSeq + 1, len(i))):
                 fData[p, :j] = i[:j]
-                #fLabels[p] = [int(x in self.vocab[i[j]] and self.vocab[i[j]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
                 fLabels[p] = [int(x in self.vocab[i[j]]) for x in range(128)]
-                #fData[p + 1, :j] = [x for x in reversed(i[-j:])]
-                #fLabels[p + 1] = i[-j - 1]
-                p += 1
-            for j in range(len(i) - maxSeq - 1):
-                fData[p] = i[j + 1 : maxSeq + j + 1]
+
+                fData[p + 1, :j] = [x for x in reversed(i[-j:])]
+                fLabels[p + 1] = [int(x in self.vocab[i[-j - 1]]) for x in range(128)]
+                #fLabels[p] = [int(x in self.vocab[i[j]] and self.vocab[i[j]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
+                p += 2
+            for j in range(1, len(i) - maxSeq):
+                fData[p] = i[j : maxSeq + j]
+                fLabels[p] = [int(x in self.vocab[i[maxSeq + j]]) for x in range(128)]
+
+                fData[p + 1] = [x for x in reversed(i[-maxSeq - j : -j])]
+                fLabels[p + 1] = [int(x in self.vocab[i[-maxSeq - j - 1]]) for x in range(128)]
                 #fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]] and self.vocab[i[maxSeq + j + 1]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
-                fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]]) for x in range(128)]
-                p += 1
+                p += 2
         #fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
         return (fData, fLabels)
 
@@ -214,5 +218,5 @@ class MidiKeras:
         model.add(Dense(128))
         model.add(Activation('sigmoid'))
         rms = RMSprop(lr = 0.001)
-        model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
+        model.compile(optimizer = rms, loss = 'binary_crossentropy', metrics = ['accuracy'])
         return model
