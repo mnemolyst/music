@@ -20,16 +20,15 @@ def suggest():
         model = model_from_json(f.read())
     model.load_weights(path.join(modelDir, '15-may-2021.h5'))
     rms = RMSprop(lr = 0.001)
-    model.compile(optimizer = rms, loss = 'categorical_crossentropy', metrics = ['accuracy'])
+    model.compile(optimizer = rms, loss = 'binary_crossentropy', metrics = ['accuracy'])
     with open(path.join(modelDir, 'vocab')) as f:
         vocab = pickle.loads(f.read())
     # TODO reconcile not-seen music events with existing vocab
     data = json.loads(request.data)
     notes = data['notes']
-    midiKeras = mk.MidiKeras(384 / 16)
+    midiKeras = mk.MidiKeras(vocab)
     print len(vocab)
-    (vData, vocab) = midiKeras.vocabNotes(notes, vocab)
-    print len(vocab)
+    vData = midiKeras.vocabNotes(notes, 384 / 16, False)
     print vData
     modelOut = model.predict(vData, batch_size = 32)
     print modelOut

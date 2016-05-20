@@ -76,7 +76,7 @@ if __name__ == '__main__':
         (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 128, 512)
         if len(testData):
             (fTestData, fTestLabels) = midiKeras.formatData(testData, 128, 512)
-            earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min')
+            earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min', patience = 1)
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
