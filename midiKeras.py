@@ -108,13 +108,6 @@ class MidiKeras:
                         })
         return (notes, pattern.resolution)
 
-    def fitUnknown(self, e):
-        for x in self.vocab:
-            if set(x.keys()) ^ set(e.keys()) == set():
-                return x
-        a = [(x, set(x.keys()) - set(e.keys()), set(e.keys()) - set(x.keys())) for x in self.vocab]
-        #a.sort(key = lambda x: #TODO
-
     def vocabNotes(self, notes, res, addNew = True):
         firstTime = None
         lastTime = None
@@ -160,7 +153,11 @@ class MidiKeras:
                 self.vocab.append(e.copy())
                 k = len(self.vocab) - 1
             else:
-                f = self.fitUnknown(e)
+                a = [(i, set(x.keys()) - set(e.keys()), set(e.keys()) - set(x.keys())) for i, x in enumerate(self.vocab[1:])]
+                a.sort(key = lambda x: len(x[1]))
+                a.sort(key = lambda x: len(x[1]) + len(x[2]))
+                k = a[0][0]
+                print 'unknown', e, 'maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
             vData.append(k)
 
         if {} in self.vocab:

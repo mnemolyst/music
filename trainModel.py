@@ -14,6 +14,8 @@ if __name__ == '__main__':
     testFiles = []
     model = None
     vocab = [None]
+    addToVocab = True
+    prefix = strftime('%d-%b-%H:%M')
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
@@ -22,20 +24,20 @@ if __name__ == '__main__':
             isTrainFile = False
         elif sys.argv[i] == 'rewrite':
             doRewrite = True
-        elif sys.argv[i] == 'vocab':
-            with open(sys.argv[i + 1]) as f:
-                vocab = pickle.loads(f.read())
-            i += 1
         elif sys.argv[i] == 'model':
             prefix = sys.argv[i + 1]
-            with open(prefix + '-struct.json') as f:
-                model = model_from_json(f.read())
-            model.load_weights(prefix + '-weights.h5')
-            rms = RMSprop(lr = 0.001)
-            model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
-            with open(prefix + '-vocab.pickle') as f:
-                vocab = pickle.loads(f.read())
             i += 1
+            if path.exists(prefix + '-struct.json'):
+                with open(prefix + '-struct.json') as f:
+                    model = model_from_json(f.read())
+                if path.exists(prefix + '-weights.h5'):
+                    model.load_weights(prefix + '-weights.h5')
+                rms = RMSprop(lr = 0.001)
+                model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
+            if path.exists(prefix + '-vocab.pickle'):
+                with open(prefix + '-vocab.pickle') as f:
+                    vocab = pickle.loads(f.read())
+                addToVocab = False
         elif path.exists(sys.argv[i]):
             if isTrainFile:
                 trainFiles.append(sys.argv[i])
@@ -43,12 +45,13 @@ if __name__ == '__main__':
                 testFiles.append(sys.argv[i])
         i += 1
 
-    trainData = []
     midiKeras = mk.MidiKeras(vocab)
+
+    trainData = []
     for f in trainFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabNotes(notes, resolution / 16)
+        vData = midiKeras.vocabNotes(notes, resolution / 16, addToVocab)
         trainData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
@@ -58,13 +61,12 @@ if __name__ == '__main__':
     for f in testFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabNotes(notes, resolution / 16)
+        vData = midiKeras.vocabNotes(notes, resolution / 16, addToVocab)
         testData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
             midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
-    prefix = strftime('%d-%b-%H:%M')
     #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
     with open(path.join('keras_models', prefix + '-vocab.pickle'), 'w') as f:
