@@ -64,7 +64,7 @@ keyMap = {
 }
 
 class MidiKeras:
-    def __init__(self, vocab = [None]):
+    def __init__(self, vocab = [None, {}]):
         self.vocab = vocab
 
     def stripSilence(self, l, silence):
@@ -114,7 +114,7 @@ class MidiKeras:
         d3 = sum([v[i] != e[i] for i in set(v.keys()).intersection(set(e.keys()))])
         return (d1 + d2) * 100 + d1 * 10 + d3
 
-    def vocabNotes(self, notes, res, addNew = True, stats = None):
+    def notesLimits(self, notes):
         firstTime = None
         lastTime = None
         for note in notes:
@@ -122,7 +122,10 @@ class MidiKeras:
                 firstTime = note['t']
             if lastTime == None or lastTime < note['t'] + note['d']:
                 lastTime = note['t'] + note['d']
+        return (firstTime, lastTime)
 
+    def vocabularize(self, notes, res, addNew = True, missed = None):
+        (firstTime, lastTime) = self.notesLimits(notes)
         eData = []
         for i in range((lastTime - firstTime) / res + 1):
             eData.append({})
@@ -163,8 +166,8 @@ class MidiKeras:
                 a = [(i, self.vocabDiff(x, e)) for i, x in enumerate(self.vocab) if i > 0]
                 a.sort(key = lambda x: x[1])
                 k = a[0][0]
-                if stats != None:
-                    stats[0] += 1
+                if missed != None:
+                    missed[0] += 1
                 print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
                 print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
             idx += 1
@@ -174,6 +177,19 @@ class MidiKeras:
             vData = self.stripSilence(vData, self.vocab.index({}))
 
         return vData
+
+    def tryResVocab(self, notes, baseRes):
+        vData = []
+        return self.vocabularize(notes, int(baseRes), addNew = False)
+        missed = [0, 0, 0]
+        vData.append(self.vocabularize(notes, int(baseRes * 0.9), addNew = False, missed = missed))
+        missed = missed[1:] + [missed[0] * 0.9]
+        vData.append(self.vocabularize(notes, int(baseRes), addNew = False, missed = missed))
+        missed = missed[1:] + missed[:1]
+        vData.append(self.vocabularize(notes, int(baseRes * 1.1), addNew = False, missed = missed))
+        missed = missed[1:] + [missed[0] * 1.1]
+        statsArgMin = min(enumerate(missed), key = lambda x: x[1])[0]
+        return vData[statsArgMin]
 
     def midiOut(self, vData, fileName, resolution):
         outPattern = midi.Pattern()

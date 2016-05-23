@@ -13,7 +13,7 @@ if __name__ == '__main__':
     trainFiles = []
     testFiles = []
     model = None
-    vocab = [None]
+    vocab = [None, {}]
     addToVocab = True
     prefix = strftime('%d-%b-%H:%M')
     i = 1
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     for f in trainFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabNotes(notes, resolution / 16, addToVocab)
+        vData = midiKeras.vocabularize(notes, resolution / 16, addNew = addToVocab)
         trainData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
@@ -61,7 +61,7 @@ if __name__ == '__main__':
     for f in testFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabNotes(notes, resolution / 16, addToVocab)
+        vData = midiKeras.vocabularize(notes, resolution / 16, addNew = addToVocab)
         testData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
