@@ -108,7 +108,13 @@ class MidiKeras:
                         })
         return (notes, pattern.resolution)
 
-    def vocabNotes(self, notes, res, addNew = True):
+    def vocabDiff(self, v, e):
+        d1 = len(set(v.keys()) - set(e.keys()))
+        d2 = len(set(e.keys()) - set(v.keys()))
+        d3 = sum([v[i] != e[i] for i in set(v.keys()).intersection(set(e.keys()))])
+        return (d1 + d2) * 100 + d1 * 10 + d3
+
+    def vocabNotes(self, notes, res, addNew = True, stats = None):
         firstTime = None
         lastTime = None
         for note in notes:
@@ -144,6 +150,7 @@ class MidiKeras:
                 eData[stopIdx][note['n']].append(e)
 
         vData = []
+        idx = 0
         for e in eData:
             for p in e:
                 e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
@@ -153,11 +160,14 @@ class MidiKeras:
                 self.vocab.append(e.copy())
                 k = len(self.vocab) - 1
             else:
-                a = [(i, set(x.keys()) - set(e.keys()), set(e.keys()) - set(x.keys())) for i, x in enumerate(self.vocab[1:])]
-                a.sort(key = lambda x: len(x[1]))
-                a.sort(key = lambda x: len(x[1]) + len(x[2]))
+                a = [(i, self.vocabDiff(x, e)) for i, x in enumerate(self.vocab) if i > 0]
+                a.sort(key = lambda x: x[1])
                 k = a[0][0]
-                print 'unknown', e, 'maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
+                if stats != None:
+                    stats[0] += 1
+                print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
+                print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
+            idx += 1
             vData.append(k)
 
         if {} in self.vocab:
