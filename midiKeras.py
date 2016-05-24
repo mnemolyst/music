@@ -124,8 +124,10 @@ class MidiKeras:
                 lastTime = note['t'] + note['d']
         return (firstTime, lastTime)
 
-    def vocabularize(self, notes, res, addNew = True, missed = None):
+    def vocabularize(self, notes, res, limitTime = None, addNew = True, missed = None):
         (firstTime, lastTime) = self.notesLimits(notes)
+        if lastTime < limitTime:
+            lastTime = limitTime
         eData = []
         for i in range((lastTime - firstTime) / res + 1):
             eData.append({})
@@ -181,15 +183,15 @@ class MidiKeras:
     def tryResVocab(self, notes, baseRes):
         vData = []
         return self.vocabularize(notes, int(baseRes), addNew = False)
-        missed = [0, 0, 0]
-        vData.append(self.vocabularize(notes, int(baseRes * 0.9), addNew = False, missed = missed))
-        missed = missed[1:] + [missed[0] * 0.9]
-        vData.append(self.vocabularize(notes, int(baseRes), addNew = False, missed = missed))
-        missed = missed[1:] + missed[:1]
-        vData.append(self.vocabularize(notes, int(baseRes * 1.1), addNew = False, missed = missed))
-        missed = missed[1:] + [missed[0] * 1.1]
-        statsArgMin = min(enumerate(missed), key = lambda x: x[1])[0]
-        return vData[statsArgMin]
+        #missed = [0, 0, 0]
+        #vData.append(self.vocabularize(notes, int(baseRes * 0.9), addNew = False, missed = missed))
+        #missed = missed[1:] + [missed[0] * 0.9]
+        #vData.append(self.vocabularize(notes, int(baseRes), addNew = False, missed = missed))
+        #missed = missed[1:] + missed[:1]
+        #vData.append(self.vocabularize(notes, int(baseRes * 1.1), addNew = False, missed = missed))
+        #missed = missed[1:] + [missed[0] * 1.1]
+        #statsArgMin = min(enumerate(missed), key = lambda x: x[1])[0]
+        #return vData[statsArgMin]
 
     def midiOut(self, vData, fileName, resolution):
         outPattern = midi.Pattern()

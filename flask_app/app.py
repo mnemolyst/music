@@ -35,18 +35,7 @@ def suggest():
     #print 'mean', np.mean(noteDs), 'std', np.std(noteDs), 'res', res
         
     forwardNotes = [n for n in notes if n['t'] < limits[0]]
-    (firstTime, lastTime) = midiKeras.notesLimits(forwardNotes)
-    print 'first', firstTime, 'last', lastTime
-    vData = midiKeras.tryResVocab(forwardNotes, res)
-    padN = np.round((limits[0] - firstTime - len(vData) * res) / res)
-    print padN
-    print 'padN', padN
-    padIdx = midiKeras.vocab.index({})
-    print 'padIdx', padIdx
-    print vData
-    for i in range(int(padN)):
-        vData.append(padIdx)
-    print vData
+    vData = midiKeras.vocabularize(forwardNotes, res, limitTime = limits[0], addNew = False)
 
     modelIn = np.array(vData).reshape((1, -1))
     #print 'modelIn shape', modelIn.shape
