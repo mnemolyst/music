@@ -126,8 +126,11 @@ class MidiKeras:
 
     def vocabularize(self, notes, res, limitTime = None, addNew = True, missed = None):
         (firstTime, lastTime) = self.notesLimits(notes)
-        if lastTime < limitTime:
-            lastTime = limitTime
+        if limitTime != None:
+            if lastTime < limitTime:
+                lastTime = limitTime
+            if limitTime < firstTime:
+                firstTime = limitTime
         eData = []
         for i in range((lastTime - firstTime) / res + 1):
             eData.append({})
@@ -175,10 +178,20 @@ class MidiKeras:
             idx += 1
             vData.append(k)
 
-        if {} in self.vocab:
-            vData = self.stripSilence(vData, self.vocab.index({}))
-
         return vData
+
+    def predictSequence(self, model, data, num = 1):
+        inSeq = data[:]
+        out = []
+        while len(out) < num:
+            modelIn = np.array(inSeq).reshape((1, -1))
+            modelOut = model.predict(modelIn, batch_size = 1)
+            inSeq.append(np.argmax(modelOut, 1))
+            if out == []:
+                out = modelOut
+            else:
+                out = np.append(out, modelOut, 0)
+        return out
 
     def tryResVocab(self, notes, baseRes):
         vData = []
@@ -222,35 +235,32 @@ class MidiKeras:
     def formatData(self, data, minSeq, maxSeq):
         nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data]) * 2
         fData = np.zeros((nData, maxSeq))
-        fLabels = np.zeros((nData, 128))
+        fLabels = np.zeros((nData, 1))
         p = 0
         for i in data:
             for j in range(minSeq, min(maxSeq + 1, len(i))):
                 fData[p, :j] = i[:j]
-                fLabels[p] = [int(x in self.vocab[i[j]]) for x in range(128)]
+                fLabels[p] = i[j]
 
-                fData[p + 1, :j] = [x for x in reversed(i[-j:])]
-                fLabels[p + 1] = [int(x in self.vocab[i[-j - 1]]) for x in range(128)]
-                #fLabels[p] = [int(x in self.vocab[i[j]] and self.vocab[i[j]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
+                fData[p + 1, :j] = list(reversed(i[-j:]))
+                fLabels[p + 1] = i[-j - 1]
                 p += 2
             for j in range(1, len(i) - maxSeq):
                 fData[p] = i[j : maxSeq + j]
-                fLabels[p] = [int(x in self.vocab[i[maxSeq + j]]) for x in range(128)]
+                fLabels[p] = i[maxSeq + j]
 
-                fData[p + 1] = [x for x in reversed(i[-maxSeq - j : -j])]
-                fLabels[p + 1] = [int(x in self.vocab[i[-maxSeq - j - 1]]) for x in range(128)]
-                #fLabels[p] = [int(x in self.vocab[i[maxSeq + j + 1]] and self.vocab[i[maxSeq + j + 1]][x][0] in (NOTE_ON, NOTE_HOLD)) for x in range(128)]
+                fData[p + 1] = list(reversed(i[-maxSeq - j : -j]))
+                fLabels[p + 1] = i[-maxSeq - j - 1]
                 p += 2
-        #fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
+        fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
         return (fData, fLabels)
 
     def genModel(self):
         model = Sequential()
         model.add(Embedding(len(self.vocab), 64, mask_zero = True))
         model.add(LSTM(128))
-        #model.add(Dense(128))
         model.add(Dense(128))
-        model.add(Activation('sigmoid'))
-        rms = RMSprop(lr = 0.001)
-        model.compile(optimizer = rms, loss = 'binary_crossentropy', metrics = ['accuracy'])
+        model.add(Dense(len(self.vocab)))
+        model.add(Activation('softmax'))
+        model.compile(optimizer = RMSprop(), loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model

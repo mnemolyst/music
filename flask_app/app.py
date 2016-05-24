@@ -17,11 +17,11 @@ def index():
 @app.route('/suggest', methods = ['POST'])
 def suggest():
     modelDir = path.join('..', 'keras_models')
-    with open(path.join(modelDir, '20-May-17-10-struct.json')) as f:
+    with open(path.join(modelDir, '24-May-12:21-struct.json')) as f:
         model = model_from_json(f.read())
-    model.load_weights(path.join(modelDir, '20-May-17-10-weights.h5'))
-    model.compile(optimizer = RMSprop(), loss = 'binary_crossentropy', metrics = ['accuracy'])
-    with open(path.join(modelDir, '20-May-14:51-vocab.pickle')) as f:
+    model.load_weights(path.join(modelDir, '24-May-12:21-weights.h5'))
+    model.compile(optimizer = RMSprop(), loss = 'categorical_crossentropy', metrics = ['accuracy'])
+    with open(path.join(modelDir, '24-May-12:21-vocab.pickle')) as f:
         vocab = pickle.loads(f.read())
     midiKeras = mk.MidiKeras(vocab)
 
@@ -29,23 +29,36 @@ def suggest():
     notes = [{'t': x['t'] * 24, 'd': x['d'] * 24, 'n': int(x['n']) + 69} for x in data['notes']]
     print data['limits']
     limits = [data['limits'][0] * 24, data['limits'][1] * 24, data['limits'][2], data['limits'][3]]
-    print limits
+    print 'limits', limits
     noteDs = np.array([x['d'] for x in notes])
     res = np.round(np.mean(noteDs) - np.std(noteDs))
     #print 'mean', np.mean(noteDs), 'std', np.std(noteDs), 'res', res
         
     forwardNotes = [n for n in notes if n['t'] < limits[0]]
-    vData = midiKeras.vocabularize(forwardNotes, res, limitTime = limits[0], addNew = False)
+    vData = midiKeras.vocabularize(forwardNotes, int(res), limitTime = int(limits[0]), addNew = False)
+    print 'fwd vData', vData
+    fwdProb = midiKeras.predictSequence(model, vData, (limits[1] - limits[0]) / int(res))
+    print 'fwd prob', fwdProb.shape, fwdProb
 
-    modelIn = np.array(vData).reshape((1, -1))
-    #print 'modelIn shape', modelIn.shape
-    #print 'modelIn', [midiKeras.vocab[x] for x in modelIn[0]]
-    modelOut = model.predict(modelIn, batch_size = 1)
-    #print 'modelOut', modelOut
-    #bestOut = np.argmax(modelOut, 1)
-    #print 'best', bestOut, modelOut[0][bestOut]
-    prediction = [i for i, x in enumerate(modelOut[0]) if x > 0.5]
-    print 'prediction', prediction
+    backwardNotes = [n for n in notes if limits[1] < n['t'] + n['d']]
+    vData = midiKeras.vocabularize(backwardNotes, int(res), limitTime = int(limits[1]), addNew = False)
+    vData = list(reversed(vData))
+    print 'bkwd vData', vData
+    bkwdProb = midiKeras.predictSequence(model, vData, (limits[1] - limits[0]) / int(res))
+    print 'bkwd prob', bkwdProb.shape, bkwdProb
+
+    prediction = []
+    for t in fwdProb:
+        print 't', t.shape, t
+        print 'fwd max', np.argmax(t)
+    for t in bkwdProb:
+        print 't', t.shape, t
+        print 'bkwd max', np.argmax(t)
+    for t in fwdProb + bkwdProb:
+        print 't', t.shape, t
+        print 'max', np.argmax(t)
+        prediction.append(np.argmax(t))
+
     return json.dumps(prediction)
 
 if __name__ == '__main__':

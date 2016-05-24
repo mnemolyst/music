@@ -15,7 +15,7 @@ if __name__ == '__main__':
     model = None
     vocab = [None, {}]
     addToVocab = True
-    prefix = strftime('%d-%b-%H:%M')
+    prefix = path.join('keras_models', strftime('%d-%b-%H:%M'))
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
@@ -52,6 +52,8 @@ if __name__ == '__main__':
         print f
         (notes, resolution) = midiKeras.midiRip(f)
         vData = midiKeras.vocabularize(notes, resolution / 16, addNew = addToVocab)
+        if {} in midiKeras.vocab:
+            vData = midiKeras.stripSilence(vData, midiKeras.vocab.index({}))
         trainData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
@@ -62,6 +64,8 @@ if __name__ == '__main__':
         print f
         (notes, resolution) = midiKeras.midiRip(f)
         vData = midiKeras.vocabularize(notes, resolution / 16, addNew = addToVocab)
+        if {} in midiKeras.vocab:
+            vData = midiKeras.stripSilence(vData, midiKeras.vocab.index({}))
         testData.append(vData)
         print 'len vData', len(vData)
         if doRewrite:
@@ -69,19 +73,20 @@ if __name__ == '__main__':
 
     #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
-    with open(path.join('keras_models', prefix + '-vocab.pickle'), 'w') as f:
-        f.write(pickle.dumps(midiKeras.vocab))
+    if addToVocab:
+        with open(path.join('keras_models', prefix + '-vocab.pickle'), 'w') as f:
+            f.write(pickle.dumps(midiKeras.vocab))
 
     if len(trainData) and not doRewrite:
         if model == None:
             model = midiKeras.genModel()
-        (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 128, 512)
+        (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 16, 512)
         if len(testData):
-            (fTestData, fTestLabels) = midiKeras.formatData(testData, 128, 512)
+            (fTestData, fTestLabels) = midiKeras.formatData(testData, 16, 512)
             earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min', patience = 1)
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:
             model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
-        model.save_weights(path.join('keras_models', prefix + '-weights.h5'))
-        with open(path.join('keras_models', prefix + '-struct.json'), 'w') as f:
+        model.save_weights(prefix + '-weights.h5', overwrite = True)
+        with open(prefix + '-struct.json', 'w') as f:
             f.write(model.to_json())
