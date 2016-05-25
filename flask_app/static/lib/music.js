@@ -434,6 +434,7 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             method: 'POST',
             data: JSON.stringify(data),
             contentType: 'application/json',
+            dataType: 'json',
             //xhr: function() {
             //    var xhr = new window.XMLHttpRequest();
             //    xhr.upload.addEventListener('progress', function(e) {
@@ -445,9 +446,8 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             //    return xhr;
             //},
             success: function(data) {
-                console.log(data);
                 for (var i = 0; i < data.length; i++) {
-                    var note = new Note(data[i].t, data[i].d, data[i].n, [1]);
+                    var note = new Note(data[i].t, data[i].d, data[i].n);
                     composition.notes.push(note);
                 }
             }
@@ -496,7 +496,6 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
                         }
                         composition.notes = notes;
                         composition.tempo = data.tempo || 0.5; // seconds per beat
-                        console.log(composition.notes)
 
                         composition.refresh();
                         progressBar.lastSegment.point = progressBar.firstSegment.point;

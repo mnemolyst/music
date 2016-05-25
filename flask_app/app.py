@@ -8,20 +8,50 @@ import numpy as np
 from keras.models import model_from_json
 from keras.optimizers import RMSprop
 from flask import Flask, render_template, request
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template('index.jinja')
+    client = MongoClient()
+    db = client.music
+    collection = db.composition
+    return render_template('index.jinja', compositions = collection.find())
+
+@app.route('/composition/<compositionId>', methods = ['GET'])
+def getComposition(compositionId):
+    client = MongoClient()
+    db = client.music
+    collection = db.composition
+    composition = collection.find_one({'_id': ObjectId(compositionId)})
+    del composition['_id']
+    return json.dumps(composition)
+
+@app.route('/composition', methods = ['POST'])
+def newComposition():
+    client = MongoClient()
+    db = client.music
+    collection = db.composition
+    composition = json.loads(request.data)
+    collection_id = collection.insert_one(composition).inserted_id
+    return str(collection_id)
+
+#@app.route('/composition/<compositionId>', methods = ['POST'])
+#def postComposition(compositionId):
+#    client = MongoClient()
+#    db = client.music
+#    collection = db.composition
 
 @app.route('/suggest', methods = ['POST'])
 def suggest():
     modelDir = path.join('..', 'keras_models')
-    with open(path.join(modelDir, '24-May-12:21-struct.json')) as f:
+    pathPrefix = path.join(modelDir, '25-May-17-32')
+    with open(pathPrefix + '-struct.json') as f:
         model = model_from_json(f.read())
-    model.load_weights(path.join(modelDir, '24-May-12:21-weights.h5'))
+    model.load_weights(pathPrefix + '-weights.h5')
     model.compile(optimizer = RMSprop(), loss = 'categorical_crossentropy', metrics = ['accuracy'])
-    with open(path.join(modelDir, '24-May-12:21-vocab.pickle')) as f:
+    with open(pathPrefix + '-vocab.pickle') as f:
         vocab = pickle.loads(f.read())
     midiKeras = mk.MidiKeras(vocab)
 
@@ -41,12 +71,15 @@ def suggest():
     #print 'fwd prob', fwdProb.shape, fwdProb
 
     backwardNotes = [n for n in notes if limits[1] < n['t'] + n['d']]
-    vData = midiKeras.vocabularize(backwardNotes, int(res), limitTime = int(limits[1]), addNew = False)
-    vData = list(reversed(vData))
-    #print 'bkwd vData', vData
-    bkwdProb = midiKeras.predictSequence(model, vData, int((limits[1] - limits[0]) / res))
-    bkwdProb = np.fliplr(bkwdProb)
-    #print 'bkwd prob', bkwdProb.shape, bkwdProb
+    if backwardNotes:
+        vData = midiKeras.vocabularize(backwardNotes, int(res), limitTime = int(limits[1]), addNew = False)
+        vData = list(reversed(vData))
+        #print 'bkwd vData', vData
+        bkwdProb = midiKeras.predictSequence(model, vData, int((limits[1] - limits[0]) / res))
+        bkwdProb = np.fliplr(bkwdProb)
+        #print 'bkwd prob', bkwdProb.shape, bkwdProb
+    else:
+        bkwdProb = np.zeros(fwdProb.shape)
 
     prediction = []
     #for t in fwdProb:
@@ -70,7 +103,6 @@ def suggest():
         print 'e', e
         for n in e:
             for i, w in enumerate(e[n]):
-                print 'i', i, 'w', w
                 if w == mk.NOTE_ON or (w == mk.NOTE_HOLD and n not in notesOn):
                     notesOn[n] = time + (i * len(e[n]) / res)
                 elif w == mk.NOTE_OFF:
@@ -79,17 +111,20 @@ def suggest():
                         print 'd', int(time - notesOn[n])
                         print 'n', n
                         newNotes.append({
-                            't': int(notesOn[n]),
-                            'd': int(time - notesOn[n]),
-                            'n': n,
+                            't': int(notesOn[n] / 24),
+                            'd': int((time - notesOn[n]) / 24),
+                            'n': n - 69,
                         })
                         del notesOn[n]
         time += res
     for n in notesOn:
+        print 't', int(notesOn[n])
+        print 'd', int(time - notesOn[n])
+        print 'n', n
         newNotes.append({
-            't': int(notesOn[n]),
-            'd': int(time - notesOn[n]),
-            'n': n,
+            't': int(notesOn[n] / 24),
+            'd': int((time - notesOn[n]) / 24),
+            'n': n - 69,
         })
 
     return json.dumps(newNotes)

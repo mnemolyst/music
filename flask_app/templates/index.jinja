@@ -9,8 +9,14 @@
         <canvas id="canvas"> </canvas>
     </div>
     <script>
-        {# todo #}
-        var dbCompositions = [];
+        var dbCompositions = [
+        {% for composition in compositions %}
+            {
+                name: '{{ composition.name }}',
+                id: '{{ composition._id }}',
+            },
+        {% endfor %}
+        ];
     </script>
     <script data-main="static/main" src="static/require.js"> </script>
 </body>
