@@ -446,6 +446,10 @@ define(['jquery', 'jqueryui', 'paper'], function($, jQueryUi, paperJs) {
             //},
             success: function(data) {
                 console.log(data);
+                for (var i = 0; i < data.length; i++) {
+                    var note = new Note(data[i].t, data[i].d, data[i].n, [1]);
+                    composition.notes.push(note);
+                }
             }
         });
     }
