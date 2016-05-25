@@ -74,7 +74,7 @@ if __name__ == '__main__':
     #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
     if addToVocab:
-        with open(path.join('keras_models', prefix + '-vocab.pickle'), 'w') as f:
+        with open(prefix + '-vocab.pickle', 'w') as f:
             f.write(pickle.dumps(midiKeras.vocab))
 
     if len(trainData) and not doRewrite:
