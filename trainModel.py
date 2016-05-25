@@ -84,9 +84,11 @@ if __name__ == '__main__':
         if len(testData):
             (fTestData, fTestLabels) = midiKeras.formatData(testData, 16, 512)
             earlyStopping = EarlyStopping(monitor = 'val_loss', mode = 'min', patience = 1)
-            model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping])
         else:
-            model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32)
         model.save_weights(prefix + '-weights.h5', overwrite = True)
         with open(prefix + '-struct.json', 'w') as f:
             f.write(model.to_json())
+        with open(prefix + '-history.pickle', 'w') as f:
+            f.write(pickle.dumps(history.history))
