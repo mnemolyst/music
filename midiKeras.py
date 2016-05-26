@@ -261,6 +261,7 @@ class MidiKeras:
         model.add(LSTM(128, return_sequences = True, dropout_W = 0.5, dropout_U = 0.5))
         model.add(LSTM(128, dropout_W = 0.5, dropout_U = 0.5))
         model.add(Dense(128))
+        model.add(Dense(128))
         model.add(Dense(len(self.vocab)))
         model.add(Activation('softmax'))
         model.compile(optimizer = RMSprop(), loss = 'categorical_crossentropy', metrics = ['accuracy'])

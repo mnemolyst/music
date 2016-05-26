@@ -7,7 +7,7 @@ import midiKeras as mk
 import numpy as np
 from keras.models import model_from_json
 from keras.optimizers import RMSprop
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, make_response
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 app = Flask(__name__)
@@ -37,11 +37,14 @@ def newComposition():
     collection_id = collection.insert_one(composition).inserted_id
     return str(collection_id)
 
-#@app.route('/composition/<compositionId>', methods = ['POST'])
-#def postComposition(compositionId):
-#    client = MongoClient()
-#    db = client.music
-#    collection = db.composition
+@app.route('/composition/<compositionId>', methods = ['POST'])
+def postComposition(compositionId):
+    client = MongoClient()
+    db = client.music
+    collection = db.composition
+    composition = json.loads(request.data)
+    result = collection.replace_one({'_id': ObjectId(compositionId)}, composition)
+    return make_response('OK', 201)
 
 @app.route('/suggest', methods = ['POST'])
 def suggest():
