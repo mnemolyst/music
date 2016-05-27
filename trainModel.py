@@ -84,13 +84,14 @@ if __name__ == '__main__':
                 f.write(model.to_json())
 
         (fTrainData, fTrainLabels) = midiKeras.formatData(trainData, 16, 512)
-        earlyStopping = EarlyStopping(monitor = 'val_loss', patience = 1)
-        modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
 
         if len(testData):
             (fTestData, fTestLabels) = midiKeras.formatData(testData, 16, 512)
+            earlyStopping = EarlyStopping(monitor = 'val_loss', patience = 1)
+            modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
             history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
         else:
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = 32, callbacks = [modelCheckpoint])
+            modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5')
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 30, batch_size = 32, callbacks = [modelCheckpoint])
         with open(pathPrefix + '-history.pickle', 'w') as f:
             f.write(pickle.dumps(history.history))
