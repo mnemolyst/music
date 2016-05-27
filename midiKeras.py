@@ -232,36 +232,56 @@ class MidiKeras:
         outPattern.append(track)
         midi.write_midifile(fileName, outPattern)
 
-    def formatData(self, data, minSeq, maxSeq):
-        nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data]) * 2
-        fData = np.zeros((nData, maxSeq))
-        fLabels = np.zeros((nData, 1))
-        p = 0
-        for i in data:
-            for j in range(minSeq, min(maxSeq + 1, len(i))):
-                fData[p, :j] = i[:j]
-                fLabels[p] = i[j]
+    # for non-stateful RNNs
+    #def formatData(self, data, minSeq, maxSeq):
+    #    nData = sum([(min(maxSeq + 1, len(x)) - minSeq) + (len(x) - maxSeq - 1) for x in data]) * 2
+    #    fData = np.zeros((nData, maxSeq))
+    #    fLabels = np.zeros((nData, 1))
+    #    p = 0
+    #    for i in data:
+    #        for j in range(minSeq, min(maxSeq + 1, len(i))):
+    #            fData[p, :j] = i[:j]
+    #            fLabels[p] = i[j]
 
-                fData[p + 1, :j] = list(reversed(i[-j:]))
-                fLabels[p + 1] = i[-j - 1]
-                p += 2
-            for j in range(1, len(i) - maxSeq):
-                fData[p] = i[j : maxSeq + j]
-                fLabels[p] = i[maxSeq + j]
+    #            fData[p + 1, :j] = list(reversed(i[-j:]))
+    #            fLabels[p + 1] = i[-j - 1]
+    #            p += 2
+    #        for j in range(1, len(i) - maxSeq):
+    #            fData[p] = i[j : maxSeq + j]
+    #            fLabels[p] = i[maxSeq + j]
 
-                fData[p + 1] = list(reversed(i[-maxSeq - j : -j]))
-                fLabels[p + 1] = i[-maxSeq - j - 1]
-                p += 2
-        fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
+    #            fData[p + 1] = list(reversed(i[-maxSeq - j : -j]))
+    #            fLabels[p + 1] = i[-maxSeq - j - 1]
+    #            p += 2
+    #    fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
+    #    return (fData, fLabels)
+
+    # for stateful RNNs
+    def formatData(self, data):
+        fData =   np.zeros((len(data), max([len(x) for x in data]) - 1, 1))
+        fLabels = np.zeros((len(data), max([len(x) for x in data]) - 1, len(self.vocab)))
+        for i, t in enumerate(data):
+            fData[i, :len(t) - 1, 0] = t[:-1]
+            fLabels[i, :len(t) - 1, :] = to_categorical([[x] for x in t[1:]], len(self.vocab))
         return (fData, fLabels)
 
-    def genModel(self):
+    def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 128, mask_zero = True, dropout = 0.5))
-        model.add(LSTM(256, return_sequences = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(LSTM(256, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(Dense(256))
+        model.add(Embedding(len(self.vocab), 128, mask_zero = True, dropout = 0.5, batch_input_shape = batchShape))
+        model.add(LSTM(256, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(LSTM(256, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(Dense(256, activation = 'relu'))
+        model.add(Dense(256, activation = 'relu'))
         model.add(Dense(len(self.vocab)))
         model.add(Activation('softmax'))
-        model.compile(optimizer = RMSprop(), loss = 'categorical_crossentropy', metrics = ['accuracy'])
+        model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
+
+#mk = MidiKeras(range(60))
+#(b, c) = mk.formatData([range(30),range(4,34)])
+#model = mk.genModel((2, 1))
+#for i in range(100):
+#    for j in range(len(b[0,:,0])):
+#        model.train_on_batch(b[:,j,:], c[:,j,:])
+#    print i
+#    model.reset_states()
