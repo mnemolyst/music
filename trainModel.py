@@ -33,8 +33,7 @@ if __name__ == '__main__':
                     model = model_from_json(f.read())
                 if path.exists(pathPrefix + '-weights.h5'):
                     model.load_weights(pathPrefix + '-weights.h5')
-                rms = RMSprop(lr = 0.001)
-                model.compile(optimizer = rms, loss = 'mse', metrics = ['accuracy'])
+                model.compile(optimizer = 'rmsprop', loss = 'mse', metrics = ['accuracy'])
             if path.exists(pathPrefix + '-vocab.pickle'):
                 with open(pathPrefix + '-vocab.pickle') as f:
                     vocab = pickle.loads(f.read())
