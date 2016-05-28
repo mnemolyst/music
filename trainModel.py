@@ -90,10 +90,10 @@ if __name__ == '__main__':
             (fTestData, fTestLabels) = midiKeras.formatData(testData)
             earlyStopping = EarlyStopping(monitor = 'val_loss', patience = 1)
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = batchShape[0], validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
         else:
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5')
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = batchShape[0], callbacks = [modelCheckpoint])
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 10, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
             #for i in range(100):
             #    for j in range(len(fTrainData[0,:,0])):
             #        print 'j', j
