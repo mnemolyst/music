@@ -258,11 +258,16 @@ class MidiKeras:
 
     # for stateful RNNs
     def formatData(self, data):
-        fData =   np.zeros((len(data), max([len(x) for x in data]) - 1, 1))
-        fLabels = np.zeros((len(data), max([len(x) for x in data]) - 1, len(self.vocab)))
+        d1 = len(data)
+        d2 = max([len(x) for x in data]) - 1
+        d3 = len(self.vocab)
+        fData =   np.zeros((d1, d2))
+        fLabels = np.zeros((d1, d2, d3))
         for i, t in enumerate(data):
-            fData[i, :len(t) - 1, 0] = t[:-1]
-            fLabels[i, :len(t) - 1, :] = to_categorical([[x] for x in t[1:]], len(self.vocab))
+            fData[i, :len(t) - 1] = t[:-1]
+            fLabels[i, :len(t) - 1, :] = to_categorical([[x] for x in t[1:]], d3)
+        fData = np.reshape(fData.T, (d1 * d2, 1))
+        fLabels = np.reshape(np.transpose(fLabels, (1, 0, 2)), (d1 * d2, d3))
         return (fData, fLabels)
 
     def genModel(self, batchShape):
@@ -277,7 +282,7 @@ class MidiKeras:
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
 
-#mk = MidiKeras(range(60))
+#mk = MidiKeras(range(40))
 #(b, c) = mk.formatData([range(30),range(4,34)])
 #model = mk.genModel((2, 1))
 #for i in range(100):
