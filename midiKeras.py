@@ -273,8 +273,9 @@ class MidiKeras:
     def genModel(self, batchShape):
         model = Sequential()
         model.add(Embedding(len(self.vocab), 128, mask_zero = True, dropout = 0.5, batch_input_shape = batchShape))
-        model.add(LSTM(256, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(LSTM(256, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(LSTM(384, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(LSTM(384, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(Dense(256, activation = 'relu'))
         model.add(Dense(256, activation = 'relu'))
         model.add(Dense(256, activation = 'relu'))
         model.add(Dense(256, activation = 'relu'))
