@@ -6,9 +6,9 @@ from os import path
 
 import keras
 import numpy as np
-from keras.models import Sequential
-from keras.layers import Embedding, LSTM, Dense, Activation
-from keras.optimizers import RMSprop
+from keras.models import Sequential, Model
+from keras.layers import Input, Embedding, LSTM, Dense, Activation
+#from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
 
 NOTE_ON = 0
@@ -261,8 +261,8 @@ class MidiKeras:
         d1 = len(data)
         d2 = max([len(x) for x in data]) - 1
         d3 = len(self.vocab)
-        fData =   np.zeros((d1, d2))
-        fLabels = np.zeros((d1, d2, d3))
+        fData =   np.zeros((d1, d2), dtype='int32')
+        fLabels = np.zeros((d1, d2, d3), dtype='int32')
         for i, t in enumerate(data):
             fData[i, :len(t) - 1] = t[:-1]
             fLabels[i, :len(t) - 1, :] = to_categorical([[x] for x in t[1:]], d3)
@@ -277,10 +277,21 @@ class MidiKeras:
         model.add(LSTM(128, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
         model.add(Dense(512, activation = 'relu'))
         model.add(Dense(512, activation = 'relu'))
-        model.add(Dense(len(self.vocab)))
-        model.add(Activation('softmax'))
+        model.add(Dense(len(self.vocab)), activation = 'softmax')
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
+
+    #def genModel2(self, batchShape):
+    #    model = Sequential()
+    #    model.add(Embedding(len(self.vocab), 64, mask_zero = True, dropout = 0.5, batch_input_shape = batchShape))
+    #    model.add(LSTM(128, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+    #    model.add(LSTM(128, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+    #    model.add(LSTM(128, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+    #    model.add(Dense(128, activation = 'relu'))
+    #    model.add(Dense(len(self.vocab)))
+    #    model.add(Activation('softmax'))
+    #    model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+    #    return model
 
 #mk = MidiKeras(range(40))
 #(b, c) = mk.formatData([range(30),range(4,34)])

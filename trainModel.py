@@ -6,7 +6,10 @@ import pickle
 import numpy as np
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import model_from_json
-from keras.optimizers import RMSprop
+# XXX testing
+from keras.models import Sequential, Model
+from keras.layers import Input, Embedding, LSTM, Dense, Activation
+#from keras.optimizers import RMSprop
 
 if __name__ == '__main__':
     doRewrite = False
@@ -116,27 +119,29 @@ if __name__ == '__main__':
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
             history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
         else:
-            earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
-            modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5')
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
+            #earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
+            #modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5')
+            #history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
 
-            #model2 = midiKeras.genModel2(batchShape)
-            #model2.layers[0].set_weights(model.layers[0].get_weights())
-            #model2.layers[0].trainable = False
-            #model2.layers[1].set_weights(model.layers[1].get_weights())
-            #model2.layers[1].trainable = False
-            #a = model2.layers[2].get_weights()
-            #for i in [0,1,3,4,6,7,9,10]:
-            #    a[i] = np.identity(128)
-            #for i in [2,5,8,11]:
-            #    a[i] = np.zeros(128)
-            #model2.layers[2].set_weights(a)
-            #model2.layers[3].set_weights(model.layers[2].get_weights())
-            #model2.layers[4].set_weights(model.layers[3].get_weights())
-            #model2.layers[5].set_weights(model.layers[4].get_weights())
+            input = Input(batch_shape = batchShape, dtype = 'int32', name = 'input')
+            x = Embedding(len(midiKeras.vocab), 128, mask_zero = True, dropout = 0.5)(input)
+            x = LSTM(32, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5)(x)
+            x = LSTM(32, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5)(x)
+            x = LSTM(32, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5)(x)
+            x = LSTM(32, stateful = True, dropout_W = 0.5, dropout_U = 0.5)(x)
+            aux_loss = Dense(len(midiKeras.vocab), activation = 'softmax', name = 'aux_loss')(x)
+            x = Dense(64, activation = 'relu')(x)
+            x = Dense(64, activation = 'relu')(x)
+            x = Dense(64, activation = 'relu')(x)
+            x = Dense(64, activation = 'relu')(x)
+            main_loss = Dense(len(midiKeras.vocab), activation = 'softmax', name = 'main_loss')(x)
+            model2 = Model(input = input, output = [aux_loss, main_loss])
+            #model2 = Model(input = input, output = main_loss)
+            model2.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'], loss_weights = {'aux_loss': 0.2, 'main_loss': 1})
             #model2.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-            ##earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
-            #modelCheckpoint = ModelCheckpoint(pathPrefix + '2-weights.h5')
+            #earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
+            modelCheckpoint = ModelCheckpoint(pathPrefix + '2-weights.h5')
+            history = model2.fit({'input': fTrainData}, {'aux_loss': fTrainLabels, 'main_loss': fTrainLabels}, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
             #history = model2.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
 
         #with open(pathPrefix + '-history.pickle', 'w') as f:
