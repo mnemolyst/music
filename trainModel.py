@@ -17,6 +17,7 @@ if __name__ == '__main__':
     vocab = [None, {}]
     addToVocab = True
     pathPrefix = path.join('keras_models', strftime('%d-%b-%H:%M'))
+    nbEpoch = 10
     i = 1
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
@@ -38,6 +39,9 @@ if __name__ == '__main__':
                 with open(pathPrefix + '-vocab.pickle') as f:
                     vocab = pickle.loads(f.read())
                 addToVocab = False
+        elif sys.argv[i] == 'epochs':
+            nbEpoch = sys.argv[i + 1]
+            i += 1
         elif path.exists(sys.argv[i]):
             if isTrainFile:
                 trainFiles.append(sys.argv[i])
@@ -77,6 +81,26 @@ if __name__ == '__main__':
         with open(pathPrefix + '-vocab.pickle', 'w') as f:
             f.write(pickle.dumps(midiKeras.vocab))
 
+    # vocab complexity
+    #for t in trainData:
+    #    lens = {}
+    #    for k in t:
+    #        e = midiKeras.vocab[k]
+    #        for n in e:
+    #            l = len(e[n])
+    #            if l not in lens:
+    #                lens[l] = 0
+    #            lens[l] += 1
+    #    print 'lens', lens
+    #lens = {}
+    #for e in midiKeras.vocab[1:]:
+    #    for n in e:
+    #        l = len(e[n])
+    #        if l not in lens:
+    #            lens[l] = 0
+    #        lens[l] += 1
+    #print 'vocab lens', lens
+
     if len(trainData) and not doRewrite:
         batchShape = (len(trainData), 1)
         if model == None:
@@ -90,17 +114,30 @@ if __name__ == '__main__':
             (fTestData, fTestLabels) = midiKeras.formatData(testData)
             earlyStopping = EarlyStopping(monitor = 'val_loss', patience = 1)
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 15, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
         else:
+            earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5')
-            history = model.fit(fTrainData, fTrainLabels, nb_epoch = 15, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
-            #for i in range(100):
-            #    for j in range(len(fTrainData[0,:,0])):
-            #        print 'j', j
-            #        model.train_on_batch(fTrainData[:,j,:], fTrainLabels[:,j,:])
-            #    print 'i', i
-            #    model.reset_states()
-            #model.save_weights(pathPrefix + '-weights.h5')
+            history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
 
-        with open(pathPrefix + '-history.pickle', 'w') as f:
-            f.write(pickle.dumps(history.history))
+            #model2 = midiKeras.genModel2(batchShape)
+            #model2.layers[0].set_weights(model.layers[0].get_weights())
+            #model2.layers[0].trainable = False
+            #model2.layers[1].set_weights(model.layers[1].get_weights())
+            #model2.layers[1].trainable = False
+            #a = model2.layers[2].get_weights()
+            #for i in [0,1,3,4,6,7,9,10]:
+            #    a[i] = np.identity(128)
+            #for i in [2,5,8,11]:
+            #    a[i] = np.zeros(128)
+            #model2.layers[2].set_weights(a)
+            #model2.layers[3].set_weights(model.layers[2].get_weights())
+            #model2.layers[4].set_weights(model.layers[3].get_weights())
+            #model2.layers[5].set_weights(model.layers[4].get_weights())
+            #model2.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+            ##earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
+            #modelCheckpoint = ModelCheckpoint(pathPrefix + '2-weights.h5')
+            #history = model2.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
+
+        #with open(pathPrefix + '-history.pickle', 'w') as f:
+        #    f.write(pickle.dumps(history.history))
