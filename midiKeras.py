@@ -131,31 +131,58 @@ class MidiKeras:
                 lastTime = limitTime
             if limitTime < firstTime:
                 firstTime = limitTime
-        eData = []
-        for i in range((lastTime - firstTime) / res + 1):
-            eData.append({})
-        for note in notes:
-            startIdx = (note['t'] - firstTime) / res
-            stopIdx = (note['t'] + note['d'] - firstTime) / res
 
-            if note['n'] not in eData[startIdx]:
-                eData[startIdx][note['n']] = []
-            e = (NOTE_ON, note['t'] - firstTime - startIdx * res)
-            if e not in eData[startIdx][note['n']]:
-                eData[startIdx][note['n']].append(e)
+        smallestBad = None
+        largestGood = None
+        goodEData = None
+        while True:
+            eData = []
+            for i in range((lastTime - firstTime) / res + 1):
+                eData.append({})
+            for note in notes:
+                startIdx = (note['t'] - firstTime) / res
+                stopIdx = (note['t'] + note['d'] - firstTime) / res
 
-            for i in range(startIdx + 1, stopIdx):
-                if note['n'] not in eData[i]:
-                    eData[i][note['n']] = []
-                e = (NOTE_HOLD, 0)
-                if e not in eData[i][note['n']]:
-                    eData[i][note['n']].append(e)
+                if note['n'] not in eData[startIdx]:
+                    eData[startIdx][note['n']] = []
+                e = (NOTE_ON, note['t'] - firstTime - startIdx * res)
+                if e not in eData[startIdx][note['n']]:
+                    eData[startIdx][note['n']].append(e)
 
-            if note['n'] not in eData[stopIdx]:
-                eData[stopIdx][note['n']] = []
-            e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * res)
-            if e not in eData[stopIdx][note['n']]:
-                eData[stopIdx][note['n']].append(e)
+                for i in range(startIdx + 1, stopIdx):
+                    if note['n'] not in eData[i]:
+                        eData[i][note['n']] = []
+                    e = (NOTE_HOLD, 0)
+                    if e not in eData[i][note['n']]:
+                        eData[i][note['n']].append(e)
+
+                if note['n'] not in eData[stopIdx]:
+                    eData[stopIdx][note['n']] = []
+                e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * res)
+                if e not in eData[stopIdx][note['n']]:
+                    eData[stopIdx][note['n']].append(e)
+
+            lens = {}
+            for e in eData:
+                for n in e:
+                    l = len(e[n])
+                    if l not in lens:
+                        lens[l] = 0
+                    lens[l] += 1
+            r = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
+            if r > 0.1:
+                if smallestBad == None or res < smallestBad:
+                    smallestBad = res
+                res /= 2
+            else:
+                if largestGood == None or res > largestGood:
+                    largestGood = res
+                res *= 2
+                goodEData = eData
+
+            if smallestBad and largestGood and goodEData and smallestBad == largestGood * 2:
+                eData = goodEData
+                break
 
         vData = []
         idx = 0
@@ -272,26 +299,12 @@ class MidiKeras:
 
     def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 128, mask_zero = True, dropout = 0.5, batch_input_shape = batchShape))
-        model.add(LSTM(128, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(LSTM(128, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(Dense(512, activation = 'relu'))
-        model.add(Dense(512, activation = 'relu'))
-        model.add(Dense(len(self.vocab)), activation = 'softmax')
+        model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
+        model.add(LSTM(32, return_sequences = True, stateful = True))
+        model.add(LSTM(32, stateful = True))
+        model.add(Dense(len(self.vocab), activation = 'softmax'))
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
-
-    #def genModel2(self, batchShape):
-    #    model = Sequential()
-    #    model.add(Embedding(len(self.vocab), 64, mask_zero = True, dropout = 0.5, batch_input_shape = batchShape))
-    #    model.add(LSTM(128, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-    #    model.add(LSTM(128, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-    #    model.add(LSTM(128, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-    #    model.add(Dense(128, activation = 'relu'))
-    #    model.add(Dense(len(self.vocab)))
-    #    model.add(Activation('softmax'))
-    #    model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-    #    return model
 
 #mk = MidiKeras(range(40))
 #(b, c) = mk.formatData([range(30),range(4,34)])
