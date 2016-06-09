@@ -3,6 +3,7 @@ import glob
 import sys
 import random
 from os import path
+import json
 
 import keras
 import numpy as np
@@ -299,12 +300,15 @@ class MidiKeras:
 
     def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
-        model.add(LSTM(32, return_sequences = True, stateful = True))
-        model.add(LSTM(32, stateful = True))
+        model.add(Embedding(len(self.vocab), 16, mask_zero = True, batch_input_shape = batchShape))
+        model.add(LSTM(128, return_sequences = True, stateful = True))
+        model.add(LSTM(128, stateful = True))
         model.add(Dense(len(self.vocab), activation = 'softmax'))
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
+
+    def reshapeModel(self, model, newShape):
+        struct = json.loads(model.to_json())
 
 #mk = MidiKeras(range(40))
 #(b, c) = mk.formatData([range(30),range(4,34)])
