@@ -15,25 +15,6 @@ import PIL
 from random import random
 import math
 
-SHAPE_FLAT = 0
-SHAPE_CONE = 1
-SHAPE_PEAR = 2
-
-class NetPlan:
-    def __init__(self):
-        self.startLayers = int(random() * 5) + 2
-        self.endLayers = int(random() * 5) + 2 + self.startLayers
-        firstSize = int(math.pow(2, int(random() * 5 + 5)))
-        otherSize = int(math.pow(2, int(random() * 5 + 5)))
-        otherSize = max(otherSize, firstSize)
-        sizeShape = int(random() * 3)
-        self.layerSizes = []
-        for i in range(self.endLayers):
-            if sizeShape == SHAPE_FLAT:
-                self.layerSizes.append(firstSize)
-            elif sizeShape == SHAPE_CONE:
-                pass
-
 if __name__ == '__main__':
     doRewrite = False
     isTrainFile = True
@@ -93,7 +74,7 @@ if __name__ == '__main__':
     for f in testFiles:
         print f
         (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabularize(notes, resolution / 4, addNew = addToVocab)
+        vData = midiKeras.vocabularize(notes, resolution / 4, addNew = False)
         if {} in midiKeras.vocab:
             vData = midiKeras.stripSilence(vData, midiKeras.vocab.index({}))
         testData.append(vData)
@@ -127,19 +108,19 @@ if __name__ == '__main__':
             lens[l] += 1
     print 'vocab lens', lens
 
-    if False and len(trainData) and not doRewrite:
+    if len(trainData) and not doRewrite:
         batchShape = (len(trainData), 1)
         if model == None:
             model = midiKeras.genModel(batchShape)
 
         (fTrainData, fTrainLabels) = midiKeras.formatData(trainData)
 
-        if len(testData):
+        if False and len(testData):
             (fTestData, fTestLabels) = midiKeras.formatData(testData)
             earlyStopping = EarlyStopping(monitor = 'val_loss', patience = 1)
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
             history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
-        else:
+        else: # XXX only do this
             def train(model, idx = None):
                 lossHist = []
                 i = 1
@@ -171,60 +152,36 @@ if __name__ == '__main__':
                     i += 1
                 return lossHist[-1]
 
-            earlyStopping = EarlyStopping(monitor = 'loss', patience = 3)
-            modelCheckpoint = ModelCheckpoint(pathPrefix + '-1-weights.h5', monitor = 'loss', verbose = 0, save_best_only = True)
-            train(model, 1)
-            #history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
-            #with open(pathPrefix + '-1-history.pickle', 'w') as f:
-            #    f.write(pickle.dumps(history.history))
+            train(model)
 
-            i = 1
+            i = 0
             loss = None
-            while True:
-                i += 1
+            while False:
                 newModel = Sequential()
                 for l in model.layers[:-2]:
                     l.trainable = False
                     newModel.add(l)
-                newModel.add(LSTM(128, return_sequences = True, stateful = True))
-                newModel.add(LSTM(128, stateful = True))
-                for l in model.layers[-1:]:
-                    newModel.add(l)
-                print len(newModel.layers), 'layers'
-                #earlyStopping = EarlyStopping(monitor = 'loss', patience = 3)
-                #modelCheckpoint = ModelCheckpoint(pathPrefix + '-' + str(i) + '-weights.h5', monitor = 'loss', verbose = 0, save_best_only = True)
+                newModel.add(LSTM(layerSizes[i], return_sequences = True, stateful = True))
+                newModel.add(LSTM(layerSizes[i], stateful = True))
+                newModel.add(Dense(len(midiKeras.vocab), activation = 'softmax'))
+                print len(newModel.layers), 'layers', [str(type(x)) + str(x.output_dim) for x in newModel.layers]
                 newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
                 train(newModel)
-                #history = newModel.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
 
                 for l in newModel.layers:
                     l.trainable = True
                 print 'fine tuning'
                 newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
                 lastLoss = loss
-                loss = train(newModel, i)
+                loss = train(newModel)
                 model = newModel
                 if lastLoss != None and lastLoss < loss:
                     break
-                #history2 = newModel.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [earlyStopping, modelCheckpoint])
-                #with open(pathPrefix + '-' + str(i) + '-history.pickle', 'w') as f:
-                #    f.write(pickle.dumps(history.history))
+                i += 1
 
             with open(pathPrefix + '-struct.json', 'w') as f:
                 f.write(model.to_json())
             model.save_weights(pathPrefix + '-weights.h5')
-            #model2.layers[1].set_weights(model.layers[0].get_weights())
-            #model2.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'], loss_weights = {'aux_out': 0.2, 'main_out': 1})
-
-            #earlyStopping = EarlyStopping(monitor = 'acc', patience = 1)
-            #modelCheckpoint = ModelCheckpoint(pathPrefix + '3-weights.h5', monitor = 'loss', verbose = 0, save_best_only = True)
-            #history = model2.fit({'input': fTrainData}, {'aux_out': fTrainLabels, 'main_out': fTrainLabels}, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, callbacks = [modelCheckpoint])
-
-            #plot(model, to_file = pathPrefix + 'model.png')
-            #plot(model2, to_file = pathPrefix + 'model2.png')
-
-        #with open(pathPrefix + '-history.pickle', 'w') as f:
-        #    f.write(pickle.dumps(history.history))
     elif False and len(testData):
         batchShape = (len(testData), 1)
         if model == None:

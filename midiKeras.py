@@ -7,7 +7,7 @@ import json
 
 import keras
 import numpy as np
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, model_from_json
 from keras.layers import Input, Embedding, LSTM, Dense, Activation
 #from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
@@ -201,8 +201,8 @@ class MidiKeras:
                 k = a[0][0]
                 if missed != None:
                     missed[0] += 1
-                print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
-                print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
+                #print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
+                #print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
             idx += 1
             vData.append(k)
 
@@ -300,15 +300,20 @@ class MidiKeras:
 
     def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 16, mask_zero = True, batch_input_shape = batchShape))
-        model.add(LSTM(128, return_sequences = True, stateful = True))
-        model.add(LSTM(128, stateful = True))
+        model.add(Embedding(len(self.vocab), 5, mask_zero = True, batch_input_shape = batchShape, dropout = 0.5))
+        model.add(LSTM(5, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(LSTM(5, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
         model.add(Dense(len(self.vocab), activation = 'softmax'))
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
 
-    def reshapeModel(self, model, newShape):
+    def rebatchModel(self, model, newBatch):
         struct = json.loads(model.to_json())
+        for l in struct['config']:
+            if 'batch_input_shape' in l['config']:
+                l['config']['batch_input_shape'][0] = newBatch
+        model2 = model_from_json(json.dumps(struct))
+        return model2
 
 #mk = MidiKeras(range(40))
 #(b, c) = mk.formatData([range(30),range(4,34)])
