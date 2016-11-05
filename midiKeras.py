@@ -8,7 +8,7 @@ import json
 import keras
 import numpy as np
 from keras.models import Sequential, Model, model_from_json
-from keras.layers import Input, Embedding, LSTM, Dense, Activation
+from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
 #from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
 
@@ -138,6 +138,7 @@ class MidiKeras:
         goodEData = None
         while True:
             eData = []
+            print 'res', res
             for i in range((lastTime - firstTime) / res + 1):
                 eData.append({})
             for note in notes:
@@ -171,7 +172,9 @@ class MidiKeras:
                         lens[l] = 0
                     lens[l] += 1
             r = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
-            if r > 0.1:
+            print 'lens', lens
+            print 'r', r
+            if r > 0.1 and res >= 2:
                 if smallestBad == None or res < smallestBad:
                     smallestBad = res
                 res /= 2
@@ -300,9 +303,11 @@ class MidiKeras:
 
     def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 5, mask_zero = True, batch_input_shape = batchShape, dropout = 0.5))
-        model.add(LSTM(5, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(LSTM(5, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
+        #model.add(LSTM(5, return_sequences = True, stateful = True))
+        model.add(LSTM(32, stateful = True))
+        for i in range(10):
+            model.add(Highway( ))
         model.add(Dense(len(self.vocab), activation = 'softmax'))
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
