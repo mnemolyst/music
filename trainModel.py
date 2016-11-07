@@ -17,6 +17,7 @@ import PIL
 from random import random, randint
 import math
 import json
+from pymongo import MongoClient
 
 if __name__ == '__main__':
     doRewrite = False
@@ -105,6 +106,14 @@ if __name__ == '__main__':
     if addToVocab:
         with open(pathPrefix + '-vocab.pickle', 'w') as f:
             f.write(pickle.dumps(midiKeras.vocab))
+
+    if not len(trainData):
+        client = MongoClient()
+        db = client.music
+        compositions = db.composition.find()
+        for composition in compositions:
+            vData = midiKeras.vocabularize( composition['notes'], 16 )
+            trainData.append( vData )
 
     # vocab complexity
     for t in trainData:

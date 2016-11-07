@@ -144,6 +144,7 @@ class MidiKeras:
         goodEData = None
         while True:
             eData = []
+            print 'res', res
             for i in range((lastTime - firstTime) / res + 1):
                 eData.append({})
             for note in notes:
@@ -178,7 +179,7 @@ class MidiKeras:
                     lens[l] += 1
             r1 = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
             r2 = float(sum([lens[x] for x in lens if x > 2])) / sum([lens[x] for x in lens])
-            if r1 > 0.05 or r2 > 0.01:
+            if ( r1 > 0.05 or r2 > 0.01 ) and res >= 2:
                 if smallestBad == None or res < smallestBad:
                     smallestBad = res
                 res /= 2
@@ -309,6 +310,7 @@ class MidiKeras:
         model = Sequential()
         model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
         model.add(LSTM(32, stateful = True))
+        #model.add(LSTM(5, return_sequences = True, stateful = True))
         for i in range(20):
             model.add(Highway(activation = 'relu'))
         model.add(Dense(len(self.vocab), activation = 'softmax'))
