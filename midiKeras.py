@@ -8,7 +8,8 @@ import json
 import keras
 import numpy as np
 from keras.models import Sequential, Model, model_from_json
-from keras.layers import Input, Embedding, LSTM, Dense, Activation
+from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
+from keras.layers.wrappers import TimeDistributed
 #from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
 
@@ -125,6 +126,11 @@ class MidiKeras:
                 lastTime = note['t'] + note['d']
         return (firstTime, lastTime)
 
+    ###############
+    #
+    # returns array of indices into self.vocab
+    #
+    ###############
     def vocabularize(self, notes, res, limitTime = None, addNew = True, missed = None):
         (firstTime, lastTime) = self.notesLimits(notes)
         if limitTime != None:
@@ -170,8 +176,9 @@ class MidiKeras:
                     if l not in lens:
                         lens[l] = 0
                     lens[l] += 1
-            r = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
-            if r > 0.1:
+            r1 = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
+            r2 = float(sum([lens[x] for x in lens if x > 2])) / sum([lens[x] for x in lens])
+            if r1 > 0.05 or r2 > 0.01:
                 if smallestBad == None or res < smallestBad:
                     smallestBad = res
                 res /= 2
@@ -300,12 +307,51 @@ class MidiKeras:
 
     def genModel(self, batchShape):
         model = Sequential()
-        model.add(Embedding(len(self.vocab), 5, mask_zero = True, batch_input_shape = batchShape, dropout = 0.5))
-        model.add(LSTM(5, return_sequences = True, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
-        model.add(LSTM(5, stateful = True, dropout_W = 0.5, dropout_U = 0.5))
+        model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
+        model.add(LSTM(32, stateful = True))
+        for i in range(20):
+            model.add(Highway(activation = 'relu'))
         model.add(Dense(len(self.vocab), activation = 'softmax'))
         model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
         return model
+
+    # iter-10
+    #def genModel(self, batchShape):
+    #    input = Input(batch_shape = batchShape, dtype = 'int32', name = 'input')
+    #    xs = Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape)(input)
+    #    xs = LSTM(32, return_sequences = True, stateful = True)(xs)
+    #    x = LSTM(32, stateful = True)(xs)
+    #    for i in range(10):
+    #        x = Highway(activation = 'relu')(x)
+    #    aux_out1 = Dense(len(self.vocab), activation = 'softmax', name = 'aux_out1')(x)
+    #    xs = LSTM(32, return_sequences = True, stateful = True)(xs)
+    #    x = LSTM(32, stateful = True)(xs)
+    #    for i in range(10):
+    #        x = Highway(activation = 'relu')(x)
+    #    aux_out2 = Dense(len(self.vocab), activation = 'softmax', name = 'aux_out2')(x)
+    #    xs = LSTM(32, return_sequences = True, stateful = True)(xs)
+    #    x = LSTM(32, stateful = True)(xs)
+    #    for i in range(10):
+    #        x = Highway(activation = 'relu')(x)
+    #    main_out = Dense(len(self.vocab), activation = 'softmax', name = 'main_out')(x)
+    #    model = Model(input = input, output = [aux_out1, aux_out2, main_out])
+    #    model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'], loss_weights = {'aux_out1': 0.2, 'aux_out2': 0.2, 'main_out': 1})
+    #    return model
+
+    #def genModel(self, batchShape):
+    #    input = Input(batch_shape = batchShape, dtype = 'int32', name = 'input')
+    #    x = Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape)(input)
+    #    x = LSTM(32, return_sequences = True, stateful = True)(x)
+    #    for i in range(10):
+    #        x = TimeDistributed(Highway(activation = 'relu'))(x)
+    #    aux_out1 = TimeDistributed(Dense(len(self.vocab), activation = 'softmax'), name = 'aux_out1')(x)
+    #    x = LSTM(32, return_sequences = True, stateful = True)(x)
+    #    for i in range(10):
+    #        x = TimeDistributed(Highway(activation = 'relu'))(x)
+    #    main_out = TimeDistributed(Dense(len(self.vocab), activation = 'softmax'), name = 'main_out')(x)
+    #    model = Model(input = input, output = [aux_out1, main_out])
+    #    model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'], loss_weights = {'aux_out1': 0.2, 'main_out': 1})
+    #    return model
 
     def rebatchModel(self, model, newBatch):
         struct = json.loads(model.to_json())

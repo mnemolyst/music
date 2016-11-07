@@ -8,12 +8,15 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import model_from_json
 # XXX testing
 from keras.models import Sequential, Model
-from keras.layers import Input, Embedding, LSTM, Dense, Activation, merge
+from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
+from keras import backend as K
+from theano import function
 #from keras.utils.visualize_util import plot
 #from keras.optimizers import RMSprop
 import PIL
-from random import random
+from random import random, randint
 import math
+import json
 
 if __name__ == '__main__':
     doRewrite = False
@@ -82,6 +85,21 @@ if __name__ == '__main__':
         if doRewrite:
             midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
 
+    # generate random training data
+    if not len(trainData):
+        for note in range(40, 70):
+            midiKeras.vocab.append( {note: [mk.NOTE_ON]} )
+            midiKeras.vocab.append( {note: [mk.NOTE_HOLD]} )
+            midiKeras.vocab.append( {note: [mk.NOTE_OFF]} )
+        for i in range(1):
+            vData = [ ]
+            for j in range(64):
+                vData.append( randint(0, len(midiKeras.vocab) - 1) )
+            trainData.append(vData)
+
+    print midiKeras.vocab
+    print trainData
+
     #print 'vocab', midiKeras.vocab
     print 'len vocab', len(midiKeras.vocab)
     if addToVocab:
@@ -90,7 +108,7 @@ if __name__ == '__main__':
 
     # vocab complexity
     for t in trainData:
-        lens = {}
+        lens = { }
         for k in t:
             e = midiKeras.vocab[k]
             for n in e:
@@ -99,7 +117,7 @@ if __name__ == '__main__':
                     lens[l] = 0
                 lens[l] += 1
         print 'note lens', lens
-    lens = {}
+    lens = { }
     for e in midiKeras.vocab[1:]:
         for n in e:
             l = len(e[n])
@@ -121,6 +139,27 @@ if __name__ == '__main__':
             modelCheckpoint = ModelCheckpoint(pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True)
             history = model.fit(fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = batchShape[0], shuffle = False, validation_data = (fTestData, fTestLabels), callbacks = [earlyStopping, modelCheckpoint])
         else: # XXX only do this
+            def imgTest(model, iterN):
+                model.reset_states()
+                img = PIL.Image.new('RGB', (max(len(x) for x in trainData), 129 * len(trainData)))
+                for i, t in enumerate(trainData):
+                    for j, k in enumerate(t):
+                        e = midiKeras.vocab[k]
+                        for n in e:
+                            img.putpixel((j, 129 * i + n), (255, 255, 255))
+                pred = model.predict_classes(fTrainData, batch_size = batchShape[0])
+                i = 0
+                for batchIdx in range(0, len(pred), batchShape[0]):
+                    batch = pred[batchIdx : batchIdx + batchShape[0]]
+                    es = [midiKeras.vocab[x] for x in batch]
+                    for j, e in enumerate(es):
+                        if e != None:
+                            for n in e:
+                                p = img.getpixel((i, 129 * j + n))
+                                img.putpixel((i, 129 * j + n), (255, p[1] / 2, p[2] / 2))
+                    i += 1
+                img.save(pathPrefix + '-i' + str(iterN) + '.png')
+
             def train(model, idx = None):
                 lossHist = []
                 i = 1
@@ -130,15 +169,19 @@ if __name__ == '__main__':
                     for j in range(0, len(fTrainData), batchShape[0]):
                         batch = (fTrainData[j:j + batchShape[0]], fTrainLabels[j:j + batchShape[0]])
                         metrics += model.train_on_batch(batch[0], batch[1])
+                    model.reset_states()
                     metrics /= len(fTrainData) / float(batchShape[0])
-                    lossHist = lossHist[-9:] + [metrics[model.metrics_names.index('loss')]]
+                    lossHist = lossHist[-14:] + [metrics[model.metrics_names.index('loss')]]
                     print zip(model.metrics_names, metrics)
-                    if len(lossHist) == 10:
-                        fit = np.polyfit(range(10), lossHist, 1)
+                    if len(lossHist) == 15:
+                        fit = np.polyfit(range(15), lossHist, 1)
                         if fit[0] > 0:
                             break
-                    model.reset_states()
+                    imgTest(model, i)
 
+                    #################
+                    # image weights #
+                    #################
                     #if idx != None:
                     #    for l in model.layers:
                     #        weights = l.get_weights()
@@ -152,32 +195,37 @@ if __name__ == '__main__':
                     i += 1
                 return lossHist[-1]
 
+            #f = K.function([model.layers[0].input, K.learning_phase()], [x.updates for x in model.layers if type(x) == LSTM])
+            #o = f([fTrainData[0 : batchShape[0]], 1])
+            imgTest(model, 0)
             train(model)
 
-            i = 0
             loss = None
             while False:
-                newModel = Sequential()
-                for l in model.layers[:-2]:
-                    l.trainable = False
+                defn = json.loads(model.to_json())
+                defn['config'] = defn['config'][:-1] + defn['config'][-2:-1] + defn['config'][-1:]
+                newModel = model_from_json(json.dumps(defn))
+                for l in defn['config'][:-2]:
+                    #l.trainable = False
                     newModel.add(l)
-                newModel.add(LSTM(layerSizes[i], return_sequences = True, stateful = True))
-                newModel.add(LSTM(layerSizes[i], stateful = True))
+                newModel.add(LSTM(64, return_sequences = True, stateful = True))
+                newModel.add(LSTM(64, stateful = True))
                 newModel.add(Dense(len(midiKeras.vocab), activation = 'softmax'))
-                print len(newModel.layers), 'layers', [str(type(x)) + str(x.output_dim) for x in newModel.layers]
+                newModel.layers[-3].set_weights(model.layers[-2].get_weights())
+                newModel.layers[-1].set_weights(model.layers[-1].get_weights())
                 newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-                train(newModel)
+                print len(newModel.layers), 'layers'
+                #train(newModel)
 
-                for l in newModel.layers:
-                    l.trainable = True
-                print 'fine tuning'
-                newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+                #for l in newModel.layers:
+                #    l.trainable = True
+                #print 'fine tuning'
+                #newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
                 lastLoss = loss
                 loss = train(newModel)
                 model = newModel
                 if lastLoss != None and lastLoss < loss:
                     break
-                i += 1
 
             with open(pathPrefix + '-struct.json', 'w') as f:
                 f.write(model.to_json())
