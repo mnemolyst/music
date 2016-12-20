@@ -1,6 +1,7 @@
 import midiKeras as mk
 import sys
-from os import path
+from os import path, listdir
+from os.path import isdir, isfile
 from time import strftime
 import pickle
 import numpy as np
@@ -18,6 +19,7 @@ from random import random, randint
 import math
 import json
 from pymongo import MongoClient
+import re
 
 class Trainer:
     def __init__(self, model, trainData):
@@ -63,10 +65,11 @@ class Trainer:
         #    history = model.fit( fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = self.batchShape[ 0 ], shuffle = False, validation_data = ( self.fTestData, self.fTestLabels ), callbacks = [ earlyStopping, modelCheckpoint ] )
 
         lossHist = []
-        i = 1
+        i = 0
 
         while True:
-            print 'i', i
+            print '\ni:', i
+            self.imgTest( i )
             metrics = np.zeros((len(self.model.metrics_names), ))
             for j in range(0, len(self.fTrainData), self.batchShape[0]):
                 batch = (self.fTrainData[j:j + self.batchShape[0]], self.fTrainLabels[j:j + self.batchShape[0]])
@@ -80,7 +83,6 @@ class Trainer:
                 if fit[0] > 0:
                     #break
                     pass
-            self.imgTest( i )
 
             #################
             # image weights #
@@ -103,12 +105,23 @@ class Trainer:
             f.write(self.model.to_json())
         self.model.save_weights(pathPrefix + '-weights.h5')
 
+def scrapeDir( dir ):
+    ret = [ ]
+    for f in listdir( dir ):
+        full  =  path.join( dir, f )
+        if isdir( full ):
+            ret.extend( scrapeDir( full ) )
+        elif re.match( '(.*)\.mid', full ):
+            ret.append( full )
+    return ret
+
 if __name__ == '__main__':
     midiKeras = mk.MidiKeras( )
     doRewrite = False
     isTrainFile = True
-    trainFiles = []
-    testFiles = []
+    trainFiles = [ ]
+    testFiles  = [ ]
+    trainDirs  = [ ]
     model = None
     vocab = [None, {}]
     addToVocab = True
@@ -119,60 +132,73 @@ if __name__ == '__main__':
     # parse command line arguments
     while i < len(sys.argv):
         if sys.argv[i] == 'train':
+            isTrainDir  = False
             isTrainFile = True
         elif sys.argv[i] == 'test':
+            isTrainDir  = False
             isTrainFile = False
         elif sys.argv[i] == 'rewrite':
             doRewrite = True
         elif sys.argv[i] == 'model':
             pathPrefix = sys.argv[i + 1]
             i += 1
-            if path.exists(pathPrefix + '-struct.json'):
-                with open(pathPrefix + '-struct.json') as f:
-                    model = model_from_json(f.read())
-                if path.exists(pathPrefix + '-weights.h5'):
-                    model.load_weights(pathPrefix + '-weights.h5')
-                model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-            if path.exists(pathPrefix + '-vocab.pickle'):
-                with open(pathPrefix + '-vocab.pickle') as f:
-                    vocab = pickle.loads(f.read())
+            if path.exists( pathPrefix + '-struct.json' ):
+                with open( pathPrefix + '-struct.json' ) as f:
+                    model = model_from_json( f.read( ) )
+                if path.exists( pathPrefix + '-weights.h5' ):
+                    model.load_weights( pathPrefix + '-weights.h5' )
+                model.compile( optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'] )
+            if path.exists( pathPrefix + '-vocab.pickle' ):
+                with open( pathPrefix + '-vocab.pickle' ) as f:
+                    vocab = pickle.loads( f.read( ) )
                     midiKeras.setVocab( vocab )
                 addToVocab = False
         elif sys.argv[i] == 'epochs':
-            nbEpoch = int(sys.argv[i + 1])
+            nbEpoch = int( sys.argv[i + 1] )
             i += 1
-        elif path.exists(sys.argv[i]):
+        elif sys.argv[i] == 'dir':
+            isTrainFile = False
+            isTrainDir  = True
+        elif path.exists( sys.argv[i] ):
             if isTrainFile:
-                trainFiles.append(sys.argv[i])
+                trainFiles.append( sys.argv[i] )
+            elif isTrainDir:
+                trainDirs.append( sys.argv[i] )
             else:
-                testFiles.append(sys.argv[i])
+                testFiles.append( sys.argv[i] )
         i += 1
+
+    # recurse through a directory and prepare MIDI files inside for training
+    for d in trainDirs:
+        trainFiles.extend( scrapeDir( d ) )
 
     # read training files, add to vocab, and generate training data
     trainData = []
     for f in trainFiles:
         print f
-        (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabularize(notes, resolution / 4, addNew = addToVocab)
+        notes = midiKeras.midiRip( f )
+        notes = midiKeras.sliceAndDice( notes )
+
+        vData = midiKeras.vocabularize( notes, addNew = addToVocab ) 
         if {} in midiKeras.vocab:
-            vData = midiKeras.stripSilence(vData, midiKeras.vocab.index({}))
-        trainData.append(vData)
-        print 'len vData', len(vData)
+            vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
+        trainData.append( vData )
+        print 'len vData', len( vData )
         if doRewrite:
-            midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
+            midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # read testing files, add to vocab, and generate testing data
     testData = []
     for f in testFiles:
         print f
-        (notes, resolution) = midiKeras.midiRip(f)
-        vData = midiKeras.vocabularize(notes, resolution / 4, addNew = False)
+        notes = midiKeras.midiRip( f )
+        vData = midiKeras.vocabularize( notes, addNew = False )
         if {} in midiKeras.vocab:
-            vData = midiKeras.stripSilence(vData, midiKeras.vocab.index({}))
-        testData.append(vData)
-        print 'len vData', len(vData)
+            vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
+        testData.append( vData )
+        print 'len vData', len( vData )
         if doRewrite:
-            midiKeras.midiOut(vData, 'midi/rewrite/' + path.basename(f), resolution)
+            midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # if we have no training data, generate some random data
     if not len(trainData):
@@ -192,7 +218,7 @@ if __name__ == '__main__':
         db = client.music
         compositions = db.composition.find()
         for composition in compositions:
-            vData = midiKeras.vocabularize( composition['notes'], 16 )
+            vData = midiKeras.vocabularize( composition['notes'] )
             trainData.append( vData )
 
     # if we didn't read in a vocab file, save the current vocab
@@ -220,6 +246,7 @@ if __name__ == '__main__':
             lens[l] += 1
     print 'vocab lens', lens
 
+    # Start working!
     if len(trainData) and not doRewrite:
         # ( number-of-tracks, 1 )
         batchShape = ( len( trainData ), 1 )
@@ -230,7 +257,6 @@ if __name__ == '__main__':
 
         # train the model
         trainer  =  Trainer( model, trainData )
-        trainer.imgTest( 0 )
         trainer.train( )
 
         #loss = None

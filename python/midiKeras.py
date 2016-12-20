@@ -85,11 +85,11 @@ class MidiKeras:
                 break
         return l[startIdx:stopIdx]
 
-    def midiRip(self, midiFile):
+    def midiRip( self, midiFile ):
         global keyMap
-        pattern = midi.read_midifile(midiFile)
-        if path.basename(midiFile) in keyMap:
-            offset = keyMap[path.basename(midiFile)] - 69
+        pattern = midi.read_midifile( midiFile )
+        if path.basename( midiFile ) in keyMap:
+            offset = keyMap[ path.basename( midiFile ) ] - 69
         else:
             offset = 0
 
@@ -100,26 +100,29 @@ class MidiKeras:
             for e in track:
                 #print e
                 time += e.tick
-                if isinstance(e, midi.NoteOnEvent) and e.velocity > 0:
-                    key = (e.channel, e.pitch - offset)
-                    notesOn[key] = time
-                elif isinstance(e, midi.NoteOffEvent) or (isinstance(e, midi.NoteOnEvent) and e.velocity == 0):
-                    key = (e.channel, e.pitch - offset)
+                if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
+                    key = ( e.channel, e.pitch - offset )
+                    notesOn[ key ] = time
+                elif isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
+                    key = ( e.channel, e.pitch - offset )
                     if key in notesOn:
-                        notes.append({
-                            't': notesOn[key],
-                            'd': time - notesOn[key],
+                        notes.append( {
+                            't': notesOn[ key ] / float( pattern.resolution ),
+                            'd': ( time - notesOn[ key ] ) / float( pattern.resolution ),
                             'n': e.pitch - offset,
-                        })
-        return (notes, pattern.resolution)
+                        } )
+        return notes
 
-    def vocabDiff(self, v, e):
-        d1 = len(set(v.keys()) - set(e.keys()))
-        d2 = len(set(e.keys()) - set(v.keys()))
-        d3 = sum([v[i] != e[i] for i in set(v.keys()).intersection(set(e.keys()))])
-        return (d1 + d2) * 100 + d1 * 10 + d3
+    def sliceAndDice( self, notes ):
+        pass
 
-    def notesLimits(self, notes):
+    def vocabDiff( self, v, e ):
+        d1 = len( set( v.keys() ) - set( e.keys() ) )
+        d2 = len( set( e.keys() ) - set( v.keys() ) )
+        d3 = sum( [ v[i] != e[i] for i in set( v.keys() ).intersection( set( e.keys() ) ) ] )
+        return ( d1 + d2 ) * 100 + d1 * 10 + d3
+
+    def notesLimits( self, notes ):
         firstTime = None
         lastTime = None
         for note in notes:
@@ -127,14 +130,14 @@ class MidiKeras:
                 firstTime = note['t']
             if lastTime == None or lastTime < note['t'] + note['d']:
                 lastTime = note['t'] + note['d']
-        return (firstTime, lastTime)
+        return ( firstTime, lastTime )
 
     ###############
     #
     # returns array of indices into self.vocab
     #
     ###############
-    def vocabularize(self, notes, res, limitTime = None, addNew = True, missed = None):
+    def vocabularize(self, notes, limitTime = None, addNew = True, missed = None):
         (firstTime, lastTime) = self.notesLimits(notes)
         if limitTime != None:
             if lastTime < limitTime:
@@ -145,18 +148,19 @@ class MidiKeras:
         smallestBad = None
         largestGood = None
         goodEData = None
+        res = 0.25
         while True:
             eData = []
-            #print 'res', res
-            for i in range((lastTime - firstTime) / res + 1):
+            print 'res', res
+            for i in range( int( (lastTime - firstTime) / res ) + 1):
                 eData.append({})
             for note in notes:
-                startIdx = (note['t'] - firstTime) / res
-                stopIdx = (note['t'] + note['d'] - firstTime) / res
+                startIdx = int( (note['t'] - firstTime) / res )
+                stopIdx = int( (note['t'] + note['d'] - firstTime) / res )
 
                 if note['n'] not in eData[startIdx]:
                     eData[startIdx][note['n']] = []
-                e = (NOTE_ON, note['t'] - firstTime - startIdx * res)
+                e = ( NOTE_ON, note['t'] - firstTime - int( startIdx * res ) )
                 if e not in eData[startIdx][note['n']]:
                     eData[startIdx][note['n']].append(e)
 
@@ -169,7 +173,7 @@ class MidiKeras:
 
                 if note['n'] not in eData[stopIdx]:
                     eData[stopIdx][note['n']] = []
-                e = (NOTE_OFF, note['t'] + note['d'] - firstTime - stopIdx * res)
+                e = ( NOTE_OFF, note['t'] + note['d'] - firstTime - int( stopIdx * res ) )
                 if e not in eData[stopIdx][note['n']]:
                     eData[stopIdx][note['n']].append(e)
 
@@ -231,19 +235,6 @@ class MidiKeras:
             else:
                 out = np.append(out, modelOut, 0)
         return out
-
-    def tryResVocab(self, notes, baseRes):
-        vData = []
-        return self.vocabularize(notes, int(baseRes), addNew = False)
-        #missed = [0, 0, 0]
-        #vData.append(self.vocabularize(notes, int(baseRes * 0.9), addNew = False, missed = missed))
-        #missed = missed[1:] + [missed[0] * 0.9]
-        #vData.append(self.vocabularize(notes, int(baseRes), addNew = False, missed = missed))
-        #missed = missed[1:] + missed[:1]
-        #vData.append(self.vocabularize(notes, int(baseRes * 1.1), addNew = False, missed = missed))
-        #missed = missed[1:] + [missed[0] * 1.1]
-        #statsArgMin = min(enumerate(missed), key = lambda x: x[1])[0]
-        #return vData[statsArgMin]
 
     def midiOut(self, vData, fileName, resolution):
         outPattern = midi.Pattern()
