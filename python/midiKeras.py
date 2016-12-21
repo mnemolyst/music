@@ -13,6 +13,9 @@ from keras.layers.wrappers import TimeDistributed
 #from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
 
+# graphics
+import PIL
+
 NOTE_ON = 0
 NOTE_HOLD = 1
 NOTE_OFF = 2
@@ -85,7 +88,16 @@ class MidiKeras:
                 break
         return l[startIdx:stopIdx]
 
-    def midiRip( self, midiFile ):
+
+    def visTracks( tracks ):
+        img = PIL.Image.new( 'RGB', ( max( len(x) for x in tracks ) + 1, 129 * len(tracks) ) )
+        for i, track in enumerate( tracks ):
+            for j, note in enumerate( track ):
+                img.putpixel( ( j, 129 * i + note['n'] ), ( 255, 255, 255 ) )
+        img.save( pathPrefix + '-i' + str( iterN ) + '.png' )
+
+
+    def midiRip( self, midiFile, visDebug = False ):
         global keyMap
         pattern = midi.read_midifile( midiFile )
         if path.basename( midiFile ) in keyMap:
@@ -93,8 +105,9 @@ class MidiKeras:
         else:
             offset = 0
 
-        notes = []
+        tracks = [ ]
         for track in pattern:
+            notes = [ ]
             time = 0
             notesOn = {}
             for e in track:
@@ -111,16 +124,36 @@ class MidiKeras:
                             'd': ( time - notesOn[ key ] ) / float( pattern.resolution ),
                             'n': e.pitch - offset,
                         } )
-        return notes
+            tracks.append( notes )
+
+        if visDebug:
+            self.visTracks( tracks )
+
+        return tracks
 
     def sliceAndDice( self, notes ):
-        pass
+        ret = [ ]
+        length = notes[-1]['t'] + notes[-1]['d']
+        t = 0
+        iterNotes = iter( notes )
 
-    def vocabDiff( self, v, e ):
-        d1 = len( set( v.keys() ) - set( e.keys() ) )
-        d2 = len( set( e.keys() ) - set( v.keys() ) )
-        d3 = sum( [ v[i] != e[i] for i in set( v.keys() ).intersection( set( e.keys() ) ) ] )
-        return ( d1 + d2 ) * 100 + d1 * 10 + d3
+        while t < length:
+            snippet = [ iterNotes.next( ) ]
+
+            # length in quarter-notes
+            snippetLength = random.randrange( 1, 5 )
+            while snippet[-1]['t'] - snippet[0]['t']  <  snippetLength:
+                try:
+                    snippet.append( iterNotes.next( ) )
+                except StopIteration:
+                    break
+
+            ret.append( snippet )
+
+            t = snippet[-1]['t'] + snippet[-1]['d']
+
+        return ret
+
 
     def notesLimits( self, notes ):
         firstTime = None
@@ -131,6 +164,12 @@ class MidiKeras:
             if lastTime == None or lastTime < note['t'] + note['d']:
                 lastTime = note['t'] + note['d']
         return ( firstTime, lastTime )
+
+    def vocabDiff( self, v, e ):
+        d1 = len( set( v.keys() ) - set( e.keys() ) )
+        d2 = len( set( e.keys() ) - set( v.keys() ) )
+        d3 = sum( [ v[i] != e[i] for i in set( v.keys() ).intersection( set( e.keys() ) ) ] )
+        return ( d1 + d2 ) * 100 + d1 * 10 + d3
 
     ###############
     #

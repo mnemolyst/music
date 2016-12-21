@@ -43,6 +43,7 @@ class Trainer:
                 e = midiKeras.vocab[k]
                 for n in e:
                     img.putpixel( (j, 129 * i + n), (255, 255, 255) )
+
         pred = self.model.predict_classes(self.fTrainData, batch_size = self.batchShape[0])
         i = 1
         for batchIdx in range(0, len(pred), self.batchShape[0]):
@@ -139,6 +140,8 @@ if __name__ == '__main__':
             isTrainFile = False
         elif sys.argv[i] == 'rewrite':
             doRewrite = True
+        elif sys.argv[i] == 'vis':
+            visDebug = True
         elif sys.argv[i] == 'model':
             pathPrefix = sys.argv[i + 1]
             i += 1
@@ -172,33 +175,42 @@ if __name__ == '__main__':
     for d in trainDirs:
         trainFiles.extend( scrapeDir( d ) )
 
-    # read training files, add to vocab, and generate training data
+    # read training files, add to vocab (if addToVocab), and generate training data
     trainData = []
     for f in trainFiles:
         print f
-        notes = midiKeras.midiRip( f )
-        notes = midiKeras.sliceAndDice( notes )
+        tracks = midiKeras.midiRip( f, visDebug = True )
 
-        vData = midiKeras.vocabularize( notes, addNew = addToVocab ) 
-        if {} in midiKeras.vocab:
-            vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
-        trainData.append( vData )
-        print 'len vData', len( vData )
-        if doRewrite:
-            midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
+        for track in tracks:
+            snippets = midiKeras.sliceAndDice( track )
 
-    # read testing files, add to vocab, and generate testing data
+            for snippet in snippets:
+                vData = midiKeras.vocabularize( track, addNew = addToVocab ) 
+
+                if {} in midiKeras.vocab:
+                    vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
+                trainData.append( vData )
+
+                print 'len vData', len( vData )
+                if doRewrite:
+                    midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
+
+    # read testing files, add to vocab (if addToVocab), and generate testing data
     testData = []
     for f in testFiles:
         print f
-        notes = midiKeras.midiRip( f )
-        vData = midiKeras.vocabularize( notes, addNew = False )
-        if {} in midiKeras.vocab:
-            vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
-        testData.append( vData )
-        print 'len vData', len( vData )
-        if doRewrite:
-            midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
+        tracks = midiKeras.midiRip( f )
+
+        for track in tracks:
+            vData = midiKeras.vocabularize( track, addNew = False )
+
+            if {} in midiKeras.vocab:
+                vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
+            testData.append( vData )
+
+            print 'len vData', len( vData )
+            if doRewrite:
+                midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # if we have no training data, generate some random data
     if not len(trainData):
