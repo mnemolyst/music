@@ -14,7 +14,7 @@ from keras.layers.wrappers import TimeDistributed
 from keras.utils.np_utils import to_categorical
 
 # graphics
-import PIL
+from PIL import Image
 
 NOTE_ON = 0
 NOTE_HOLD = 1
@@ -89,12 +89,18 @@ class MidiKeras:
         return l[startIdx:stopIdx]
 
 
-    def visTracks( tracks ):
-        img = PIL.Image.new( 'RGB', ( max( len(x) for x in tracks ) + 1, 129 * len(tracks) ) )
+    def visSequences( self, tracks, pathPrefix = 'tracks' ):
+        imgWidth = max( x[-1]['t'] + x[-1]['d'] for x in tracks ) * 16
+        imgHeight = 129 * len(tracks)
+        img = Image.new( 'RGB', ( int( imgWidth ), int( imgHeight ) ) )
         for i, track in enumerate( tracks ):
-            for j, note in enumerate( track ):
-                img.putpixel( ( j, 129 * i + note['n'] ), ( 255, 255, 255 ) )
-        img.save( pathPrefix + '-i' + str( iterN ) + '.png' )
+            print 'i', i, len( track )
+            for note in track:
+                start = int( note['t'] * 16 )
+                end   = start + int( note['d'] * 16 )
+                for k in range( start, end ):
+                    img.putpixel( ( k, 129 * i + note['n'] ), ( 255, 255, 255 ) )
+        img.save( pathPrefix + '.png' )
 
 
     def midiRip( self, midiFile, visDebug = False ):
@@ -127,12 +133,17 @@ class MidiKeras:
             tracks.append( notes )
 
         if visDebug:
-            self.visTracks( tracks )
+            thisPath = path.dirname( path.abspath( __file__ ) )
+            self.visSequences( [ track for track in tracks if len(track) > 0 ], path.join( thisPath, 'vis_debug', path.basename( midiFile ) ) )
 
         return tracks
 
-    def sliceAndDice( self, notes ):
+    def sliceAndDice( self, notes, visDebug = False ):
+        if len( notes ) == 0:
+            return [ ]
+
         ret = [ ]
+
         length = notes[-1]['t'] + notes[-1]['d']
         t = 0
         iterNotes = iter( notes )
@@ -151,6 +162,10 @@ class MidiKeras:
             ret.append( snippet )
 
             t = snippet[-1]['t'] + snippet[-1]['d']
+
+        if visDebug:
+            thisPath = path.dirname( path.abspath( __file__ ) )
+            self.visSequences( [ snippet for snippet in ret if len(snippet) > 0 ], path.join( thisPath, 'vis_debug', 'snippets' ) )
 
         return ret
 
@@ -190,7 +205,7 @@ class MidiKeras:
         res = 0.25
         while True:
             eData = []
-            print 'res', res
+            # print 'res', res
             for i in range( int( (lastTime - firstTime) / res ) + 1):
                 eData.append({})
             for note in notes:

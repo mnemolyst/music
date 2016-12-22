@@ -119,6 +119,7 @@ def scrapeDir( dir ):
 if __name__ == '__main__':
     midiKeras = mk.MidiKeras( )
     doRewrite = False
+    visDebug = False
     isTrainFile = True
     trainFiles = [ ]
     testFiles  = [ ]
@@ -179,10 +180,10 @@ if __name__ == '__main__':
     trainData = []
     for f in trainFiles:
         print f
-        tracks = midiKeras.midiRip( f, visDebug = True )
+        tracks = midiKeras.midiRip( f, visDebug = visDebug )
 
         for track in tracks:
-            snippets = midiKeras.sliceAndDice( track )
+            snippets = midiKeras.sliceAndDice( track, visDebug = visDebug )
 
             for snippet in snippets:
                 vData = midiKeras.vocabularize( track, addNew = addToVocab ) 
@@ -191,7 +192,7 @@ if __name__ == '__main__':
                     vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
                 trainData.append( vData )
 
-                print 'len vData', len( vData )
+                # print 'len vData', len( vData )
                 if doRewrite:
                     midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
@@ -239,9 +240,9 @@ if __name__ == '__main__':
             f.write(pickle.dumps(midiKeras.vocab))
 
     # vocab complexity
-    for track in trainData:
+    for seq in trainData:
         lens = { }
-        for k in track:
+        for k in seq:
             e = midiKeras.vocab[k]
             for n in e:
                 l = len(e[n])
