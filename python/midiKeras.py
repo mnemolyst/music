@@ -20,6 +20,14 @@ NOTE_ON = 0
 NOTE_HOLD = 1
 NOTE_OFF = 2
 
+OFF_ON     = 0
+ON_OFF     = 1
+ON_OFF_ON  = 2
+OFF_ON_OFF = 3
+ON_ON      = 4
+
+THIS_PATH = path.dirname( path.abspath( __file__ ) )
+
 keyMap = {
     'bwv772.mid': 72,
     'bwv773.mid': 72,
@@ -89,12 +97,11 @@ class MidiKeras:
         return l[startIdx:stopIdx]
 
 
-    def visSequences( self, tracks, pathPrefix = 'tracks' ):
+    def visNotes( self, tracks, pathPrefix = 'tracks' ):
         imgWidth = max( x[-1]['t'] + x[-1]['d'] for x in tracks ) * 16
         imgHeight = 129 * len(tracks)
-        img = Image.new( 'RGB', ( int( imgWidth ), int( imgHeight ) ) )
+        img = Image.new( 'RGB', ( int(imgWidth), int(imgHeight) ) )
         for i, track in enumerate( tracks ):
-            print 'i', i, len( track )
             for note in track:
                 start = int( note['t'] * 16 )
                 end   = start + int( note['d'] * 16 )
@@ -102,6 +109,97 @@ class MidiKeras:
                     img.putpixel( ( k, 129 * i + note['n'] ), ( 255, 255, 255 ) )
         img.save( pathPrefix + '.png' )
 
+    def visVData( self, vData, res ):
+        imgWidth = len( vData )
+        imgHeight = 129
+        img = Image.new( 'RGB', ( int(imgWidth), int(imgHeight) ) )
+        for i, idx, in enumerate( vData ):
+            e = self.vocab[ idx ]
+            for n in e:
+                if NOTE_ON in e[ n ]:
+                    img.putpixel( ( i, n ), ( 255, 255, 255 ) )
+        img.save( path.join( THIS_PATH, 'vis_debug', 'vdata' ) + '.png' )
+
+
+    def oneStep( self, midiFile ):
+        pattern = midi.read_midifile( midiFile )
+
+        eventWidth = float( pattern.resolution ) / 16.0
+
+        ret = [ ]
+
+        def getK( e ):
+            if e in self.vocab:
+                return self.vocab.index( e )
+            else:
+                self.vocab.append( e.copy( ) )
+                return len( self.vocab ) - 1
+
+        def updateEvent( x, pitch, isOn ):
+            if isOn:
+                if pitch not in x:
+                    x[ pitch ] = ON_ON
+                elif x[ pitch ] == ON_OFF:
+                    x[ pitch ] = ON_OFF_ON
+                elif x[ pitch ] == ON_ON:
+                    x[ pitch ] = ON_OFF_ON
+            else:
+                if pitch not in x:
+                    pass
+                elif x[ pitch ] == OFF_ON:
+                    x[ pitch ] = OFF_ON_OFF
+                elif x[ pitch ] == ON_ON:
+                    x[ pitch ] = ON_OFF
+
+            return x
+
+        for track in pattern:
+            vData = [ ] # indices into self.vocab
+            time = 0
+            eventTime = 0.0 # units of ticks, floating point
+
+            notesOn = { }
+
+            for e in track:
+                if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
+                    isOn = True
+                elif isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
+                    isOn = False
+                else:
+                    continue
+
+                newTime = time + e.tick
+                eventIdx = int( float( newTime ) / eventWidth )
+                thisEvent = dict( [ (n, ON_ON) for n in notesOn ] )
+
+                if eventIdx == len( vData ) - 1  and  type( vData[ -1 ] ) == dict:
+                    vData[ -1 ]  =  updateEvent( vData[ -1 ].copy( ), e.pitch, isOn )
+
+                elif len( vData ) <= eventIdx:
+                    if type( vData[ -1 ] )  ==  dict:
+                        vData[ -1 ] = getK( vData[ -1 ] )
+
+                    numMeanwhile = eventIdx - len( vData )
+                    for i in range( numMeanwhile ):
+                        vData.append( getK( thisEvent ) )
+
+                    vData.append( thisEvent )
+
+                    vData[ -1 ]  =  updateEvent( vData[ -1 ].copy( ), e.pitch, isOn )
+
+                if isOn:
+                    key = ( e.channel, e.pitch )
+                    notesOn[ key ] = time + e.tick
+                else:
+                    key = ( e.channel, e.pitch )
+                    if key in notesOn:
+                        del notesOn[ key ]
+
+                time += e.tick
+
+            ret.append( vData )
+
+        return ret
 
     def midiRip( self, midiFile, visDebug = False ):
         global keyMap
@@ -133,8 +231,7 @@ class MidiKeras:
             tracks.append( notes )
 
         if visDebug:
-            thisPath = path.dirname( path.abspath( __file__ ) )
-            self.visSequences( [ track for track in tracks if len(track) > 0 ], path.join( thisPath, 'vis_debug', path.basename( midiFile ) ) )
+            self.visNotes( [ track for track in tracks if len(track) > 0 ], path.join( THIS_PATH, 'vis_debug', path.basename( midiFile ) ) )
 
         return tracks
 
@@ -164,8 +261,8 @@ class MidiKeras:
             t = snippet[-1]['t'] + snippet[-1]['d']
 
         if visDebug:
-            thisPath = path.dirname( path.abspath( __file__ ) )
-            self.visSequences( [ snippet for snippet in ret if len(snippet) > 0 ], path.join( thisPath, 'vis_debug', 'snippets' ) )
+            #self.visNotes( [ snippet for snippet in ret if len(snippet) > 0 ], path.join( THIS_PATH, 'vis_debug', 'snippets' ) )
+            pass
 
         return ret
 
@@ -191,45 +288,47 @@ class MidiKeras:
     # returns array of indices into self.vocab
     #
     ###############
-    def vocabularize(self, notes, limitTime = None, addNew = True, missed = None):
-        (firstTime, lastTime) = self.notesLimits(notes)
-        if limitTime != None:
-            if lastTime < limitTime:
-                lastTime = limitTime
-            if limitTime < firstTime:
-                firstTime = limitTime
+    def vocabularize( self, notes, addNew = True, missed = None, visDebug = False ):
+
+        # tuple - units of quarter notes
+        ( firstTime, lastTime ) = self.notesLimits( notes )
 
         smallestBad = None
         largestGood = None
         goodEData = None
-        res = 0.25
+        res = 0.25 # quarter notes per event point
         while True:
             eData = []
             # print 'res', res
-            for i in range( int( (lastTime - firstTime) / res ) + 1):
-                eData.append({})
-            for note in notes:
-                startIdx = int( (note['t'] - firstTime) / res )
-                stopIdx = int( (note['t'] + note['d'] - firstTime) / res )
 
-                if note['n'] not in eData[startIdx]:
-                    eData[startIdx][note['n']] = []
+            # init eData with blanks
+            for i in range( int( ( lastTime - firstTime ) / res ) + 1 ):
+                eData.append({})
+
+            for note in notes:
+                startIdx = int( ( note['t'] - firstTime ) / res )
+                stopIdx = int( ( note['t'] + note['d'] - firstTime ) / res )
+
+                n = note['n']
+
+                if n not in eData[startIdx]:
+                    eData[ startIdx ][ n ] = []
                 e = ( NOTE_ON, note['t'] - firstTime - int( startIdx * res ) )
-                if e not in eData[startIdx][note['n']]:
-                    eData[startIdx][note['n']].append(e)
+                if e not in eData[ startIdx ][ n ]:
+                    eData[ startIdx ][ n ].append( e )
 
                 for i in range(startIdx + 1, stopIdx):
-                    if note['n'] not in eData[i]:
-                        eData[i][note['n']] = []
+                    if n not in eData[ i ]:
+                        eData[ i ][ n ] = []
                     e = (NOTE_HOLD, 0)
-                    if e not in eData[i][note['n']]:
-                        eData[i][note['n']].append(e)
+                    if e not in eData[ i ][ n ]:
+                        eData[ i ][ n ].append( e )
 
-                if note['n'] not in eData[stopIdx]:
-                    eData[stopIdx][note['n']] = []
+                if n not in eData[ stopIdx ]:
+                    eData[ stopIdx ][ n ] = []
                 e = ( NOTE_OFF, note['t'] + note['d'] - firstTime - int( stopIdx * res ) )
-                if e not in eData[stopIdx][note['n']]:
-                    eData[stopIdx][note['n']].append(e)
+                if e not in eData[ stopIdx ][ n ]:
+                    eData[ stopIdx ][ n ].append( e )
 
             lens = {}
             for e in eData:
@@ -238,48 +337,56 @@ class MidiKeras:
                     if l not in lens:
                         lens[l] = 0
                     lens[l] += 1
-            r1 = float(sum([lens[x] for x in lens if x > 1])) / sum([lens[x] for x in lens])
-            r2 = float(sum([lens[x] for x in lens if x > 2])) / sum([lens[x] for x in lens])
-            if ( r1 > 0.05 or r2 > 0.01 ) and res >= 2:
+
+            r1 = float( sum( [lens[x] for x in lens if x > 1] ) ) / sum( [lens[x] for x in lens] )
+            r2 = float( sum( [lens[x] for x in lens if x > 2] ) ) / sum( [lens[x] for x in lens] )
+            if ( r1 > 0.05 or r2 > 0.01 ):
                 if smallestBad == None or res < smallestBad:
                     smallestBad = res
-                res /= 2
+                res /= 2.0
             else:
                 if largestGood == None or res > largestGood:
                     largestGood = res
-                res *= 2
+                res *= 2.0
                 goodEData = eData
 
-            if smallestBad and largestGood and goodEData and smallestBad == largestGood * 2:
+            if smallestBad and largestGood and goodEData and smallestBad == largestGood * 2.0:
                 eData = goodEData
+                res = largestGood
                 break
 
         vData = []
         idx = 0
         for e in eData:
-            for p in e:
-                e[p] = [x[0] for x in sorted(e[p], key = lambda y: y[1])]
+            for n in e:
+                e[n] = [ x[0] for x in sorted( e[n], key = lambda y: y[1] ) ]
+
             if e in self.vocab:
                 k = self.vocab.index(e)
             elif addNew:
-                self.vocab.append(e.copy())
+                self.vocab.append( e.copy() )
                 k = len(self.vocab) - 1
             else:
-                a = [(i, self.vocabDiff(x, e)) for i, x in enumerate(self.vocab) if i > 0]
-                a.sort(key = lambda x: x[1])
+                a = [ ( i, self.vocabDiff( x, e ) ) for i, x in enumerate( self.vocab ) if i > 0 ]
+                a.sort( key = lambda x: x[1] )
                 k = a[0][0]
                 if missed != None:
                     missed[0] += 1
                 #print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
                 #print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
             idx += 1
-            vData.append(k)
+            vData.append( k )
 
+        if visDebug:
+            self.visVData( vData, res )
+
+        #print 'res:', res
         return vData
 
     def predictSequence(self, model, data, num = 1):
         inSeq = data[:]
         out = []
+        # todo: different check for length of out?
         while len(out) < num:
             modelIn = np.array(inSeq).reshape((1, -1))
             modelOut = model.predict(modelIn, batch_size = 1)
@@ -345,6 +452,7 @@ class MidiKeras:
         d1 = len(data)
         d2 = max([len(x) for x in data]) - 1
         d3 = len(self.vocab)
+        print 'd1 d2 d3', d1, d2, d3
         fData =   np.zeros((d1, d2), dtype='int32')
         fLabels = np.zeros((d1, d2, d3), dtype='int32')
         for i, track in enumerate(data):
@@ -357,8 +465,8 @@ class MidiKeras:
     def genModel(self, batchShape):
         model = Sequential()
         model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
+        model.add(LSTM(32, return_sequences = True, stateful = True))
         model.add(LSTM(32, stateful = True))
-        #model.add(LSTM(5, return_sequences = True, stateful = True))
         for i in range(20):
             model.add(Highway(activation = 'relu'))
         model.add(Dense(len(self.vocab), activation = 'softmax'))

@@ -7,7 +7,6 @@ import pickle
 import numpy as np
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import model_from_json
-# XXX testing
 from keras.models import Sequential, Model
 from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
 from keras import backend as K
@@ -15,25 +14,32 @@ from theano import function
 #from keras.utils.visualize_util import plot
 #from keras.optimizers import RMSprop
 import PIL
-from random import random, randint
+from random import random, randint, shuffle
 import math
 import json
 from pymongo import MongoClient
 import re
 
 class Trainer:
-    def __init__(self, model, trainData):
+    def __init__( self, model, trainData, testData = None ):
         global midiKeras
+
         self.model      =  model
         self.trainData  =  trainData
+        self.testData   =  testData
         self.batchShape = ( len( self.trainData ), 1 )
+        #self.batchShape = ( 16, 1 )
 
+        ########################
         # fTrainData dimensions:
         # total-number-of-training-points  X  1
         #
         # fTrainLabels dimensions:
         # total-number-of-training-points  X  length-of-vocab
         (self.fTrainData, self.fTrainLabels) = midiKeras.formatData(self.trainData)
+
+        if len(self.testData):
+            (self.fTestData, self.fTestLabels) = midiKeras.formatData(self.testData)
 
     def imgTest( self, iterN ):
         self.model.reset_states()
@@ -44,7 +50,10 @@ class Trainer:
                 for n in e:
                     img.putpixel( (j, 129 * i + n), (255, 255, 255) )
 
-        pred = self.model.predict_classes(self.fTrainData, batch_size = self.batchShape[0])
+        pred = self.model.predict_classes( self.fTrainData, batch_size = self.batchShape[0], verbose=0 )
+        #print 'pred\tact'
+        #for ( p, a ) in zip( pred, np.append( self.fTrainData[2:], [[0],[0]] ) ):
+        #    print str(p) + '\t' + str(a)
         i = 1
         for batchIdx in range(0, len(pred), self.batchShape[0]):
             batch = pred[batchIdx : batchIdx + self.batchShape[0]]
@@ -59,11 +68,10 @@ class Trainer:
 
     def train( self, idx = None ):
 
-        #if False and len( self.testData ):
-        #    ( self.fTestData, self.fTestLabels ) = midiKeras.formatData( self.testData )
-        #    earlyStopping = EarlyStopping( monitor = 'val_loss', patience = 1 )
-        #    modelCheckpoint = ModelCheckpoint( pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True )
-        #    history = model.fit( fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = self.batchShape[ 0 ], shuffle = False, validation_data = ( self.fTestData, self.fTestLabels ), callbacks = [ earlyStopping, modelCheckpoint ] )
+        if len( self.testData ):
+            earlyStopping = EarlyStopping( monitor = 'val_loss', patience = 1 )
+            modelCheckpoint = ModelCheckpoint( pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True )
+            history = model.fit( fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = self.batchShape[ 0 ], shuffle = False, validation_data = ( self.fTestData, self.fTestLabels ), callbacks = [ earlyStopping, modelCheckpoint ] )
 
         lossHist = []
         i = 0
@@ -72,10 +80,11 @@ class Trainer:
             print '\ni:', i
             self.imgTest( i )
             metrics = np.zeros((len(self.model.metrics_names), ))
+
+            self.model.reset_states()
             for j in range(0, len(self.fTrainData), self.batchShape[0]):
                 batch = (self.fTrainData[j:j + self.batchShape[0]], self.fTrainLabels[j:j + self.batchShape[0]])
                 metrics += self.model.train_on_batch(batch[0], batch[1])
-            self.model.reset_states()
             metrics /= len(self.fTrainData) / float(self.batchShape[0])
             lossHist = lossHist[-14:] + [metrics[self.model.metrics_names.index('loss')]]
             print zip(self.model.metrics_names, metrics)
@@ -117,12 +126,16 @@ def scrapeDir( dir ):
     return ret
 
 if __name__ == '__main__':
+
+    global midiKeras
     midiKeras = mk.MidiKeras( )
+
     doRewrite = False
     visDebug = False
     isTrainFile = True
     trainFiles = [ ]
     testFiles  = [ ]
+    testFrag = None
     trainDirs  = [ ]
     model = None
     vocab = [None, {}]
@@ -163,6 +176,9 @@ if __name__ == '__main__':
         elif sys.argv[i] == 'dir':
             isTrainFile = False
             isTrainDir  = True
+        elif sys.argv[i] == 'test-frag':
+            testFrag = float( sys.argv[i + 1] )
+            i += 1
         elif path.exists( sys.argv[i] ):
             if isTrainFile:
                 trainFiles.append( sys.argv[i] )
@@ -178,29 +194,42 @@ if __name__ == '__main__':
 
     # read training files, add to vocab (if addToVocab), and generate training data
     trainData = []
-    for f in trainFiles:
+    for i, f in enumerate( trainFiles ):
         print f
-        tracks = midiKeras.midiRip( f, visDebug = visDebug )
+        print str(i) + '/' + str(len(trainFiles))
+        try:
+            #tracks = midiKeras.midiRip( f, visDebug = visDebug )
+            tracks = midiKeras.oneStep( f )
+        except:
+            continue
 
-        for track in tracks:
-            snippets = midiKeras.sliceAndDice( track, visDebug = visDebug )
+        print tracks
+    quit()
 
-            for snippet in snippets:
-                vData = midiKeras.vocabularize( track, addNew = addToVocab ) 
+        #for track in tracks:
+        #    if len(track) == 0:
+        #        continue
+        #    #snippets = midiKeras.sliceAndDice( track, visDebug = visDebug )
 
-                if {} in midiKeras.vocab:
-                    vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
-                trainData.append( vData )
+        #    #for snippet in snippets:
+        #    vData = midiKeras.vocabularize( track, addNew = addToVocab, visDebug = visDebug ) 
 
-                # print 'len vData', len( vData )
-                if doRewrite:
-                    midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
+        #    if {} in midiKeras.vocab:
+        #        vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
+        #    trainData.append( vData )
+
+        #    # print 'len vData', len( vData )
+        #    if doRewrite:
+        #        midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # read testing files, add to vocab (if addToVocab), and generate testing data
     testData = []
     for f in testFiles:
         print f
-        tracks = midiKeras.midiRip( f )
+        try:
+            tracks = midiKeras.midiRip( f )
+        except:
+            continue
 
         for track in tracks:
             vData = midiKeras.vocabularize( track, addNew = False )
@@ -234,30 +263,38 @@ if __name__ == '__main__':
             vData = midiKeras.vocabularize( composition['notes'] )
             trainData.append( vData )
 
+    if not len(testData) and testFrag:
+        shuffle( trainData )
+        testIdx = ( int( len(trainData) * testFrag ) * 16 ) / 16
+        endIdx  = ( len(trainData) * 16 ) / 16
+        print testIdx, endIdx
+        testData = trainData[:testIdx]
+        trainData = trainData[testIdx:endIdx]
+
     # if we didn't read in a vocab file, save the current vocab
     if addToVocab:
         with open(pathPrefix + '-vocab.pickle', 'w') as f:
             f.write(pickle.dumps(midiKeras.vocab))
 
     # vocab complexity
-    for seq in trainData:
-        lens = { }
-        for k in seq:
-            e = midiKeras.vocab[k]
-            for n in e:
-                l = len(e[n])
-                if l not in lens:
-                    lens[l] = 0
-                lens[l] += 1
-        print 'note lens', lens
-    lens = { }
-    for e in midiKeras.vocab[1:]:
-        for n in e:
-            l = len(e[n])
-            if l not in lens:
-                lens[l] = 0
-            lens[l] += 1
-    print 'vocab lens', lens
+    #for seq in trainData:
+    #    lens = { }
+    #    for k in seq:
+    #        e = midiKeras.vocab[k]
+    #        for n in e:
+    #            l = len(e[n])
+    #            if l not in lens:
+    #                lens[l] = 0
+    #            lens[l] += 1
+    #    print 'note lens', lens
+    #lens = { }
+    #for e in midiKeras.vocab[1:]:
+    #    for n in e:
+    #        l = len(e[n])
+    #        if l not in lens:
+    #            lens[l] = 0
+    #        lens[l] += 1
+    #print 'vocab lens', lens
 
     # Start working!
     if len(trainData) and not doRewrite:
@@ -269,7 +306,13 @@ if __name__ == '__main__':
             model = midiKeras.genModel( batchShape )
 
         # train the model
-        trainer  =  Trainer( model, trainData )
+        trainer  =  Trainer( model, trainData, testData )
+        print 'trainData:', trainer.trainData
+        print 'fTrainData:', trainer.fTrainData
+        print 'fTrainLabels:', trainer.fTrainLabels
+        print 'vocab:'
+        for i, v in enumerate( midiKeras.vocab ):
+            print i, v
         trainer.train( )
 
         #loss = None
