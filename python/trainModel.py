@@ -146,6 +146,8 @@ if __name__ == '__main__':
 
     # parse command line arguments
     while i < len(sys.argv):
+
+        # switch on argument i
         if sys.argv[i] == 'train':
             isTrainDir  = False
             isTrainFile = True
@@ -182,7 +184,7 @@ if __name__ == '__main__':
         elif path.exists( sys.argv[i] ):
             if isTrainFile:
                 trainFiles.append( sys.argv[i] )
-            elif isTrainDir:
+            elif isTrainDir and isdir( sys.argv[i] ):
                 trainDirs.append( sys.argv[i] )
             else:
                 testFiles.append( sys.argv[i] )
@@ -199,12 +201,11 @@ if __name__ == '__main__':
         print str(i) + '/' + str(len(trainFiles))
         try:
             #tracks = midiKeras.midiRip( f, visDebug = visDebug )
-            tracks = midiKeras.oneStep( f )
-        except:
+            trainData.extend( midiKeras.oneStep( f ) )
+        except Exception, e:
+            print 'failed:', f
+            raise e
             continue
-
-        print tracks
-    quit()
 
         #for track in tracks:
         #    if len(track) == 0:
@@ -263,13 +264,13 @@ if __name__ == '__main__':
             vData = midiKeras.vocabularize( composition['notes'] )
             trainData.append( vData )
 
-    if not len(testData) and testFrag:
-        shuffle( trainData )
-        testIdx = ( int( len(trainData) * testFrag ) * 16 ) / 16
-        endIdx  = ( len(trainData) * 16 ) / 16
-        print testIdx, endIdx
-        testData = trainData[:testIdx]
-        trainData = trainData[testIdx:endIdx]
+    #if not len(testData) and testFrag:
+    #    shuffle( trainData )
+    #    testIdx = ( int( len(trainData) * testFrag ) * 16 ) / 16
+    #    endIdx  = ( len(trainData) * 16 ) / 16
+    #    print testIdx, endIdx
+    #    testData = trainData[:testIdx]
+    #    trainData = trainData[testIdx:endIdx]
 
     # if we didn't read in a vocab file, save the current vocab
     if addToVocab:
@@ -306,13 +307,14 @@ if __name__ == '__main__':
             model = midiKeras.genModel( batchShape )
 
         # train the model
-        trainer  =  Trainer( model, trainData, testData )
-        print 'trainData:', trainer.trainData
-        print 'fTrainData:', trainer.fTrainData
-        print 'fTrainLabels:', trainer.fTrainLabels
+        print 'trainData:', trainData
         print 'vocab:'
         for i, v in enumerate( midiKeras.vocab ):
             print i, v
+        trainer  =  Trainer( model, trainData, testData )
+        #print 'fTrainData:', trainer.fTrainData
+        #print 'fTrainLabels:', trainer.fTrainLabels
+        quit()
         trainer.train( )
 
         #loss = None

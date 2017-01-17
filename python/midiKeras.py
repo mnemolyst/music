@@ -28,54 +28,6 @@ ON_ON      = 4
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
-keyMap = {
-    'bwv772.mid': 72,
-    'bwv773.mid': 72,
-    'bwv774.mid': 74,
-    'bwv775.mid': 74,
-    'bwv776.mid': 75,
-    'bwv777.mid': 76,
-    'bwv778.mid': 76,
-    'bwv779.mid': 77,
-    'bwv780.mid': 77,
-    'bwv781.mid': 79,
-    'bwv782.mid': 79,
-    'bwv783.mid': 69,
-    'bwv784.mid': 69,
-    'bwv785.mid': 70,
-    'bwv786.mid': 71,
-    'abroad_.mid':  77, # f maj
-    'air_.mid':     77, # f maj
-    'alaurie_.mid': 72, # c# maj
-    'alie_.mid':    76, # e min
-    'argyle_.mid':  78, # f# maj
-    'baliff_.mid':  74, # d maj
-    'ballycopyright_1.mid': 74, # d maj
-    'ballycopyright_2.mid': 74, # d maj
-    'ballycopyright_3.mid': 74, # d maj
-    'bluebell_1.mid': 71, # b min
-    'bluebell_2.mid': 71, # b min
-    'bluebell_3.mid': 71, # b min
-    'meadow1_.mid':   78, # f# maj
-    'meadow2_.mid':   74, # d maj
-    'undaunt_.mid':   75, # eb maj
-    'aberdovy_.mid':  79, # g maj
-    'alicegry_.mid':  71, # b maj
-    'billyboy_.mid':  72, # c maj
-    'billyeng_.mid':  77, # f maj
-    'billyire_.mid':  75, # eb maj
-    'blackhair_1.mid': 76, # e min
-    'blackhair_2.mid': 76, # e min
-    'blackhair_3.mid': 76, # e min
-    'blackhair_4.mid': 76, # e min
-    'blowind_.mid':    79, # g maj
-    'boldsold_.mid':   74, # d maj
-    'candles_.mid':    74, # d min
-    'charms_.mid':     72, # c min
-    'lesley_.mid':     77, # f maj
-    'susan_.mid':      80, # ab min
-}
-
 class MidiKeras:
     def __init__(self, vocab = [None, {}]):
         self.vocab = vocab
@@ -121,81 +73,107 @@ class MidiKeras:
         img.save( path.join( THIS_PATH, 'vis_debug', 'vdata' ) + '.png' )
 
 
+    def updateEvent( self, event, pitch, isOn ):
+        x = event.copy( )
+
+        if isOn:
+            if pitch not in x:
+                x[ pitch ] = ON_ON
+            elif x[ pitch ] == ON_OFF:
+                x[ pitch ] = ON_OFF_ON
+            elif x[ pitch ] == ON_ON:
+                x[ pitch ] = ON_OFF_ON
+        else:
+            if pitch not in x:
+                pass
+            elif x[ pitch ] == OFF_ON:
+                x[ pitch ] = OFF_ON_OFF
+            elif x[ pitch ] == ON_ON:
+                x[ pitch ] = ON_OFF
+
+        return x
+
+
     def oneStep( self, midiFile ):
+
+        # the MIDI pattern
         pattern = midi.read_midifile( midiFile )
 
-        eventWidth = float( pattern.resolution ) / 16.0
+        # eventWidth = one sixteenth-note's worth of midi ticks
+        eventWidth = float( pattern.resolution ) / 4.0
 
+        # return value
         ret = [ ]
 
-        def getK( e ):
-            if e in self.vocab:
-                return self.vocab.index( e )
-            else:
-                self.vocab.append( e.copy( ) )
-                return len( self.vocab ) - 1
-
-        def updateEvent( x, pitch, isOn ):
-            if isOn:
-                if pitch not in x:
-                    x[ pitch ] = ON_ON
-                elif x[ pitch ] == ON_OFF:
-                    x[ pitch ] = ON_OFF_ON
-                elif x[ pitch ] == ON_ON:
-                    x[ pitch ] = ON_OFF_ON
-            else:
-                if pitch not in x:
-                    pass
-                elif x[ pitch ] == OFF_ON:
-                    x[ pitch ] = OFF_ON_OFF
-                elif x[ pitch ] == ON_ON:
-                    x[ pitch ] = ON_OFF
-
-            return x
-
         for track in pattern:
-            vData = [ ] # indices into self.vocab
-            time = 0
-            eventTime = 0.0 # units of ticks, floating point
-
-            notesOn = { }
+            vData         = [ ] # indices into self.vocab
+            vDataIdx      = None
+            time          = 0
+            notesOn       = { }
+            buildingEvent = { }
 
             for e in track:
-                if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
-                    isOn = True
-                elif isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
+                if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
+                    print ''
+                    print e.pitch, 'off', e.tick
+                elif isinstance( e, midi.NoteOnEvent ):
+                    isOn = True
+                    print ''
+                    print e.pitch, 'on', e.tick
                 else:
                     continue
 
-                newTime = time + e.tick
-                eventIdx = int( float( newTime ) / eventWidth )
-                thisEvent = dict( [ (n, ON_ON) for n in notesOn ] )
+                lastTime      =  time
+                time         +=  e.tick
+                lastVDataIdx  =  vDataIdx
+                vDataIdx      =  int( float( time ) / eventWidth )
 
-                if eventIdx == len( vData ) - 1  and  type( vData[ -1 ] ) == dict:
-                    vData[ -1 ]  =  updateEvent( vData[ -1 ].copy( ), e.pitch, isOn )
+                # use the notes that were on before this midi event to construct a fill
+                # for time intervening between that midi event and this one
+                fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in notesOn ] )
+                if fillEvent not in self.vocab:
+                    self.vocab.append( fillEvent.copy( ) )
+                fillEventIdx  =  self.vocab.index( fillEvent )
 
-                elif len( vData ) <= eventIdx:
-                    if type( vData[ -1 ] )  ==  dict:
-                        vData[ -1 ] = getK( vData[ -1 ] )
-
-                    numMeanwhile = eventIdx - len( vData )
-                    for i in range( numMeanwhile ):
-                        vData.append( getK( thisEvent ) )
-
-                    vData.append( thisEvent )
-
-                    vData[ -1 ]  =  updateEvent( vData[ -1 ].copy( ), e.pitch, isOn )
-
+                # update the set of notes currently on as of this midi event
+                key  =  ( e.channel, e.pitch )
                 if isOn:
-                    key = ( e.channel, e.pitch )
-                    notesOn[ key ] = time + e.tick
+                    notesOn[ key ]  =  time
                 else:
-                    key = ( e.channel, e.pitch )
                     if key in notesOn:
                         del notesOn[ key ]
 
-                time += e.tick
+                print 'notesOn', notesOn
+
+                # if we have moved on to another discretized time, vocab and append
+                # the last one, fill intervening time, and start building a new
+                # discretized vocab thing
+                if lastVDataIdx  !=  vDataIdx:
+                    if not isOn:
+                        buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, False )
+
+                    if lastVDataIdx  !=  None:
+                        if buildingEvent not in self.vocab:
+                            self.vocab.append( buildingEvent.copy( ) )
+                        buildingEventIdx  =  self.vocab.index( buildingEvent )
+                        vData.append( buildingEventIdx )
+
+                    while len( vData )  <  vDataIdx:
+                        vData.append( fillEventIdx )
+
+                    buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in notesOn ] )
+                    print 'new', buildingEvent
+
+                # in any case, the current event updates the currently building discretized thing
+                print 'before', buildingEvent
+                buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
+                print 'after', buildingEvent
+
+            if buildingEvent not in self.vocab:
+                self.vocab.append( buildingEvent.copy( ) )
+            buildingEventIdx  =  self.vocab.index( buildingEvent )
+            vData.append( buildingEventIdx )
 
             ret.append( vData )
 
