@@ -21,10 +21,10 @@ NOTE_HOLD = 1
 NOTE_OFF = 2
 
 OFF_ON     = 0
-ON_OFF     = 1
-ON_OFF_ON  = 2
-OFF_ON_OFF = 3
-ON_ON      = 4
+ON_ON      = 1
+ON_OFF     = 2
+ON_OFF_ON  = 3
+OFF_ON_OFF = 4
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
@@ -78,7 +78,7 @@ class MidiKeras:
 
         if isOn:
             if pitch not in x:
-                x[ pitch ] = ON_ON
+                x[ pitch ] = OFF_ON
             elif x[ pitch ] == ON_OFF:
                 x[ pitch ] = ON_OFF_ON
             elif x[ pitch ] == ON_ON:
@@ -110,72 +110,85 @@ class MidiKeras:
             vDataIdx      = None
             time          = 0
             notesOn       = { }
-            buildingEvent = { }
+            buildingEvent = None
 
             for e in track:
+                # data
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
-                    print ''
-                    print e.pitch, 'off', e.tick
+                    print '\n', e.pitch, 'off', e.tick
                 elif isinstance( e, midi.NoteOnEvent ):
                     isOn = True
-                    print ''
-                    print e.pitch, 'on', e.tick
+                    print '\n', e.pitch, 'on', e.tick
                 else:
                     continue
 
                 lastTime      =  time
                 time         +=  e.tick
                 lastVDataIdx  =  vDataIdx
+                print 'lastVDataIdx\t', lastVDataIdx
                 vDataIdx      =  int( float( time ) / eventWidth )
-
-                # use the notes that were on before this midi event to construct a fill
-                # for time intervening between that midi event and this one
-                fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in notesOn ] )
-                if fillEvent not in self.vocab:
-                    self.vocab.append( fillEvent.copy( ) )
-                fillEventIdx  =  self.vocab.index( fillEvent )
-
+                print 'vDataIdx\t', vDataIdx
                 # update the set of notes currently on as of this midi event
+                lastNotesOn   =  notesOn.copy( )
+                print 'lastNotesOn\t', lastNotesOn
                 key  =  ( e.channel, e.pitch )
                 if isOn:
                     notesOn[ key ]  =  time
                 else:
                     if key in notesOn:
                         del notesOn[ key ]
+                print 'notesOn\t\t', notesOn
 
-                print 'notesOn', notesOn
+                # use the notes that were on before this midi event to construct a fill
+                # for time intervening between that midi event and this one
+                fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
+                print 'fillEvent\t', fillEvent
+
+                if buildingEvent  ==  None:
+                    buildingEvent  =  { e.pitch: OFF_ON }
+                    print 'NEW buildingEvent', buildingEvent
+                    continue
+
+                # logic
 
                 # if we have moved on to another discretized time, vocab and append
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
-                if lastVDataIdx  !=  vDataIdx:
-                    if not isOn:
-                        buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, False )
+                if lastVDataIdx == vDataIdx:
+                    print 'buildingEvent before', buildingEvent
+                    buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
+                    print 'UPDATE buildingEvent', buildingEvent
+                else:
+                    if buildingEvent not in self.vocab:
+                        self.vocab.append( buildingEvent.copy( ) )
+                    buildingEventIdx  =  self.vocab.index( buildingEvent )
+                    vData.append( buildingEventIdx )
+                    print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
-                    if lastVDataIdx  !=  None:
-                        if buildingEvent not in self.vocab:
-                            self.vocab.append( buildingEvent.copy( ) )
-                        buildingEventIdx  =  self.vocab.index( buildingEvent )
-                        vData.append( buildingEventIdx )
-
+                    if fillEvent not in self.vocab:
+                        self.vocab.append( fillEvent.copy( ) )
+                    fillEventIdx  =  self.vocab.index( fillEvent )
                     while len( vData )  <  vDataIdx:
                         vData.append( fillEventIdx )
+                        print 'APPENDING fill', fillEvent, '(' + str( fillEvent ) + ')'
 
-                    buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in notesOn ] )
-                    print 'new', buildingEvent
+                    # e.g: key = ( channel, pitch )
+                    buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
+                    print 'NEW buildingEvent', buildingEvent
+                    buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
+                    print 'UPDATE buildingEvent', buildingEvent
 
-                # in any case, the current event updates the currently building discretized thing
-                print 'before', buildingEvent
-                buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                print 'after', buildingEvent
+            # finally
+            if buildingEvent:
+                if buildingEvent not in self.vocab:
+                    self.vocab.append( buildingEvent.copy( ) )
+                buildingEventIdx  =  self.vocab.index( buildingEvent )
+                vData.append( buildingEventIdx )
+                print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
-            if buildingEvent not in self.vocab:
-                self.vocab.append( buildingEvent.copy( ) )
-            buildingEventIdx  =  self.vocab.index( buildingEvent )
-            vData.append( buildingEventIdx )
-
-            ret.append( vData )
+            if vData:
+                ret.append( vData )
 
         return ret
 
