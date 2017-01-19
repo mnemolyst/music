@@ -71,7 +71,7 @@ class Trainer:
         if len( self.testData ):
             earlyStopping = EarlyStopping( monitor = 'val_loss', patience = 1 )
             modelCheckpoint = ModelCheckpoint( pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True )
-            history = model.fit( fTrainData, fTrainLabels, nb_epoch = nbEpoch, batch_size = self.batchShape[ 0 ], shuffle = False, validation_data = ( self.fTestData, self.fTestLabels ), callbacks = [ earlyStopping, modelCheckpoint ] )
+            history = model.fit( fTrainData, fTrainLabels, nb_epoch = maxEpochs, batch_size = self.batchShape[ 0 ], shuffle = False, validation_data = ( self.fTestData, self.fTestLabels ), callbacks = [ earlyStopping, modelCheckpoint ] )
 
         lossHist = []
         i = 0
@@ -125,6 +125,21 @@ def scrapeDir( dir ):
             ret.append( full )
     return ret
 
+def trainAndTest( trainData, testData ):
+    global model
+    ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainData )
+    ( fTestData, fTestLabels ) = midiKeras.formatData( testData )
+
+    trainMetrics = np.zeros( ( len( model.metrics_names ), ) )
+    batchShape = ( len( self.trainData ), 1 )
+
+    model.reset_states()
+    for j in range( 0, len( fTrainData ), batchShape[0] ):
+        batch = ( fTrainData[ j:j + batchShape[0] ], fTrainLabels[ j:j + batchShape[0] ] )
+        trainMetrics += model.train_on_batch( batch[0], batch[1] )
+    trainMetrics /= ( len( fTrainData ) / float( batchShape[0] ) )
+    print zip( model.metrics_names, trainMetrics )
+
 if __name__ == '__main__':
 
     global midiKeras
@@ -141,7 +156,7 @@ if __name__ == '__main__':
     vocab = [None, {}]
     addToVocab = True
     pathPrefix = path.join('keras_models', strftime('%d-%b-%H:%M'))
-    nbEpoch = 10
+    maxEpochs = 1
     i = 1
 
     # parse command line arguments
@@ -173,7 +188,7 @@ if __name__ == '__main__':
                     midiKeras.setVocab( vocab )
                 addToVocab = False
         elif sys.argv[i] == 'epochs':
-            nbEpoch = int( sys.argv[i + 1] )
+            maxEpochs = int( sys.argv[i + 1] )
             i += 1
         elif sys.argv[i] == 'dir':
             isTrainFile = False
@@ -195,7 +210,45 @@ if __name__ == '__main__':
         trainFiles.extend( scrapeDir( d ) )
 
     # read training files, add to vocab (if addToVocab), and generate training data
-    trainData = []
+    trainData          =  []
+    epochCnt           =  0
+    maxTrainChunkSize  =  100
+    trainChunkSize     =  0
+    trainChunk         =  [ ]
+    maxTestChunkSize   =  100
+    testChunkSize      =  0
+    testChunk          =  [ ]
+    batchShape         =  ( 16, 1 )
+    model              =  midiKeras.genModel( batchShape )
+
+    # loop for number of training epochs
+        # loop through every training file
+            # fill trainChunk then testChunk until full
+            # when full, train network once, test it, collect stats, empty chunks
+    pauseForTraining = False
+    while epochCnt < maxEpochs:
+        for i, f in enumerate( trainFiles ):
+            print f, str( i + 1 ) + '/' + str( len( trainFiles ) )
+            fileData = midiKeras.oneStep( f )
+            fileDataSize = sum( len( x ) for x in fileData )
+
+            trainChunkSize = sum( len( x ) for x in trainChunk )
+            if trainChunkSize + fileDataSize  <  maxTrainChunkSize:
+                trainChunk.extend( fileData )
+            else:
+                testChunkSize = sum( len( x ) for x in testChunk )
+                if testChunkSize + fileDataSize  <  maxTestChunkSize:
+                    testChunk.extend( fileData )
+                else:
+                    print 'trainAndTest'
+                    print 'trainChunk', trainChunk
+                    print 'testChunk', testChunk
+                    trainAndTest( trainChunk, testChunk )
+                    trainChunk = [ ]
+                    testChunk  = [ ]
+
+        epochCnt += 1
+
     for i, f in enumerate( trainFiles ):
         print f
         print str(i) + '/' + str(len(trainFiles))

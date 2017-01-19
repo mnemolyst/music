@@ -192,6 +192,23 @@ class MidiKeras:
 
         return ret
 
+
+    # for stateful RNNs
+    def formatData(self, data):
+        d1 = len(data)
+        d2 = max([len(x) for x in data]) - 1
+        d3 = len(self.vocab)
+        print 'd1 d2 d3', d1, d2, d3
+        fData =   np.zeros((d1, d2), dtype='int32')
+        fLabels = np.zeros((d1, d2, d3), dtype='int32')
+        for i, track in enumerate(data):
+            fData[i, :len(track) - 1] = track[:-1]
+            fLabels[i, :len(track) - 1, :] = to_categorical([[x] for x in track[1:]], d3)
+        fData = np.reshape(fData.T, (d1 * d2, 1))
+        fLabels = np.reshape(np.transpose(fLabels, (1, 0, 2)), (d1 * d2, d3))
+        return (fData, fLabels)
+
+
     def midiRip( self, midiFile, visDebug = False ):
         global keyMap
         pattern = midi.read_midifile( midiFile )
@@ -437,21 +454,6 @@ class MidiKeras:
     #            p += 2
     #    fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
     #    return (fData, fLabels)
-
-    # for stateful RNNs
-    def formatData(self, data):
-        d1 = len(data)
-        d2 = max([len(x) for x in data]) - 1
-        d3 = len(self.vocab)
-        print 'd1 d2 d3', d1, d2, d3
-        fData =   np.zeros((d1, d2), dtype='int32')
-        fLabels = np.zeros((d1, d2, d3), dtype='int32')
-        for i, track in enumerate(data):
-            fData[i, :len(track) - 1] = track[:-1]
-            fLabels[i, :len(track) - 1, :] = to_categorical([[x] for x in track[1:]], d3)
-        fData = np.reshape(fData.T, (d1 * d2, 1))
-        fLabels = np.reshape(np.transpose(fLabels, (1, 0, 2)), (d1 * d2, d3))
-        return (fData, fLabels)
 
     def genModel(self, batchShape):
         model = Sequential()
