@@ -229,7 +229,13 @@ if __name__ == '__main__':
     while epochCnt < maxEpochs:
         for i, f in enumerate( trainFiles ):
             print f, str( i + 1 ) + '/' + str( len( trainFiles ) )
-            fileData = midiKeras.oneStep( f )
+            try:
+                fileData = midiKeras.oneStep( f )
+            except Exception, e:
+                print 'failed:', f
+                continue
+            print 'fileData', fileData
+
             fileDataSize = sum( len( x ) for x in fileData )
 
             trainChunkSize = sum( len( x ) for x in trainChunk )
@@ -240,9 +246,10 @@ if __name__ == '__main__':
                 if testChunkSize + fileDataSize  <  maxTestChunkSize:
                     testChunk.extend( fileData )
                 else:
-                    print 'trainAndTest'
-                    print 'trainChunk', trainChunk
-                    print 'testChunk', testChunk
+                    print 'trainAndTest('
+                    print '\ttrainChunk', trainChunk
+                    print '\ttestChunk', testChunk
+                    print ')'
                     trainAndTest( trainChunk, testChunk )
                     trainChunk = [ ]
                     testChunk  = [ ]
@@ -297,25 +304,25 @@ if __name__ == '__main__':
                 midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # if we have no training data, generate some random data
-    if not len(trainData):
-        for note in range(40, 70):
-            midiKeras.vocab.append( {note: [mk.NOTE_ON]} )
-            midiKeras.vocab.append( {note: [mk.NOTE_HOLD]} )
-            midiKeras.vocab.append( {note: [mk.NOTE_OFF]} )
-        for i in range(16):
-            vData = [ ]
-            for j in range(64):
-                vData.append( randint(1, len(midiKeras.vocab) - 1) )
-            trainData.append(vData)
+    #if not len(trainData):
+    #    for note in range(40, 70):
+    #        midiKeras.vocab.append( {note: [mk.NOTE_ON]} )
+    #        midiKeras.vocab.append( {note: [mk.NOTE_HOLD]} )
+    #        midiKeras.vocab.append( {note: [mk.NOTE_OFF]} )
+    #    for i in range(16):
+    #        vData = [ ]
+    #        for j in range(64):
+    #            vData.append( randint(1, len(midiKeras.vocab) - 1) )
+    #        trainData.append(vData)
 
     # if we still have no training data, load all the data from the current mongo db
-    if not len(trainData):
-        client = MongoClient()
-        db = client.music
-        compositions = db.composition.find()
-        for composition in compositions:
-            vData = midiKeras.vocabularize( composition['notes'] )
-            trainData.append( vData )
+    #if not len(trainData):
+    #    client = MongoClient()
+    #    db = client.music
+    #    compositions = db.composition.find()
+    #    for composition in compositions:
+    #        vData = midiKeras.vocabularize( composition['notes'] )
+    #        trainData.append( vData )
 
     #if not len(testData) and testFrag:
     #    shuffle( trainData )
@@ -327,8 +334,8 @@ if __name__ == '__main__':
 
     # if we didn't read in a vocab file, save the current vocab
     if addToVocab:
-        with open(pathPrefix + '-vocab.pickle', 'w') as f:
-            f.write(pickle.dumps(midiKeras.vocab))
+        with open( pathPrefix + '-vocab.pickle', 'w' ) as f:
+            f.write( pickle.dumps( midiKeras.vocab ) )
 
     # vocab complexity
     #for seq in trainData:
@@ -351,7 +358,7 @@ if __name__ == '__main__':
     #print 'vocab lens', lens
 
     # Start working!
-    if len(trainData) and not doRewrite:
+    if len( trainData ) and not doRewrite:
         # ( number-of-tracks, 1 )
         batchShape = ( len( trainData ), 1 )
 
