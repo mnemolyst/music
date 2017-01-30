@@ -20,6 +20,8 @@ import json
 from pymongo import MongoClient
 import re
 
+THIS_PATH = path.dirname( path.abspath( __file__ ) )
+
 class Trainer:
     def __init__( self, model, trainData, testData = None ):
         global midiKeras
@@ -125,20 +127,52 @@ def scrapeDir( dir ):
             ret.append( full )
     return ret
 
-def trainAndTest( trainData, testData ):
+def trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData = [ ], fTestLabels = [ ] ):
     global model
-    ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainData )
-    ( fTestData, fTestLabels ) = midiKeras.formatData( testData )
+
+    #print 'trainAndTest ('
+    #print '\tfTrainData', fTrainData
+    #print '\tfTrainLabels', fTrainLabels
+    #print '\tfTestData', fTestData
+    #print '\tfTestLabels', fTestLabels
+    #print '\tbatchShape', batchShape
+    #print ')'
 
     trainMetrics = np.zeros( ( len( model.metrics_names ), ) )
-    batchShape = ( len( self.trainData ), 1 )
 
     model.reset_states()
+    leadIn = 8
     for j in range( 0, len( fTrainData ), batchShape[0] ):
-        batch = ( fTrainData[ j:j + batchShape[0] ], fTrainLabels[ j:j + batchShape[0] ] )
-        trainMetrics += model.train_on_batch( batch[0], batch[1] )
+
+        batchX  =  fTrainData[ j:j + batchShape[ 0 ] ]
+
+        if leadIn > 0:
+            model.predict_on_batch( batchX )
+            leadIn -= 1
+        else:
+            batchY  =  fTrainLabels[ j:j + batchShape[ 0 ] ]
+            trainMetrics += model.train_on_batch( batchX, batchY )
+
     trainMetrics /= ( len( fTrainData ) / float( batchShape[0] ) )
     print zip( model.metrics_names, trainMetrics )
+
+def dumpEmbeddingWeights( fileName ):
+    global model, pathPrefix
+
+    w  =  model.layers[ 1 ].get_weights( )[ 0 ]
+    img = PIL.Image.new( 'RGB', w.shape )
+
+    for i in range( w.shape[ 0 ] ):
+        for j in range( w.shape[ 1 ] ):
+            v  =  int( 255 / ( 1.0 + np.exp( - w[ i, j ] ) ) )
+            img.putpixel( (i, j), (0, 0, v) )
+
+    img.save( path.join( THIS_PATH, 'vis_debug', fileName + '.png' ) )
+
+def doIt( a, b ):
+    for i in range( a, b ):
+        trainAndTest((1,1), fTrainData, fTrainLabels)
+        dumpEmbeddingWeights( 'test' + str(i) )
 
 if __name__ == '__main__':
 
@@ -209,17 +243,24 @@ if __name__ == '__main__':
     for d in trainDirs:
         trainFiles.extend( scrapeDir( d ) )
 
+    # init midiKeras.vocab
+    for f in trainFiles:
+        try:
+            midiKeras.oneStep( f )
+        except Exception, e:
+            continue
+
     # read training files, add to vocab (if addToVocab), and generate training data
     trainData          =  []
     epochCnt           =  0
-    maxTrainChunkSize  =  100
+    maxTrainChunkSize  =  100000
     trainChunkSize     =  0
     trainChunk         =  [ ]
     maxTestChunkSize   =  100
     testChunkSize      =  0
     testChunk          =  [ ]
-    batchShape         =  ( 16, 1 )
-    model              =  midiKeras.genModel( batchShape )
+    batchShape         =  ( 1, 1 )
+    model              =  midiKeras.genFuncModel( batchShape )
 
     # loop for number of training epochs
         # loop through every training file
@@ -227,6 +268,7 @@ if __name__ == '__main__':
             # when full, train network once, test it, collect stats, empty chunks
     pauseForTraining = False
     while epochCnt < maxEpochs:
+        print 'epochCnt', epochCnt
         for i, f in enumerate( trainFiles ):
             print f, str( i + 1 ) + '/' + str( len( trainFiles ) )
             try:
@@ -246,15 +288,23 @@ if __name__ == '__main__':
                 if testChunkSize + fileDataSize  <  maxTestChunkSize:
                     testChunk.extend( fileData )
                 else:
-                    print 'trainAndTest('
-                    print '\ttrainChunk', trainChunk
-                    print '\ttestChunk', testChunk
-                    print ')'
-                    trainAndTest( trainChunk, testChunk )
+                    ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainData )
+                    ( fTestData, fTestLabels ) = midiKeras.formatData( testData )
+                    batchShape = ( len( trainData ), 1 )
+                    trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData, fTestLabels )
                     trainChunk = [ ]
                     testChunk  = [ ]
 
         epochCnt += 1
+
+    print 'vocab:'
+    for i, v in enumerate( midiKeras.vocab ):
+        print i, v
+
+
+    ( fTrainData, fTrainLabels ) = midiKeras.formatData( fileData )
+    quit()
+
 
     for i, f in enumerate( trainFiles ):
         print f
@@ -364,7 +414,7 @@ if __name__ == '__main__':
 
         # if we didn't load a model, make a new one
         if model == None:
-            model = midiKeras.genModel( batchShape )
+            model = midiKeras.genFuncModel( batchShape )
 
         # train the model
         print 'trainData:', trainData
@@ -407,7 +457,7 @@ if __name__ == '__main__':
     elif False and len(testData):
         batchShape = (len(testData), 1)
         if model == None:
-            model = midiKeras.genModel(batchShape)
+            model = midiKeras.genFuncModel(batchShape)
             with open(pathPrefix + '-struct.json', 'w') as f:
                 f.write(model.to_json())
         #else:

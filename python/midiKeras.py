@@ -8,10 +8,11 @@ import json
 import keras
 import numpy as np
 from keras.models import Sequential, Model, model_from_json
-from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
+from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway, Lambda
 from keras.layers.wrappers import TimeDistributed
-#from keras.optimizers import RMSprop
+from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
+import keras.backend as K
 
 # graphics
 from PIL import Image
@@ -116,38 +117,38 @@ class MidiKeras:
                 # data
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
-                    print '\n', e.pitch, 'off', e.tick
+                    #print '\n', e.pitch, 'off', e.tick
                 elif isinstance( e, midi.NoteOnEvent ):
                     isOn = True
-                    print '\n', e.pitch, 'on', e.tick
+                    #print '\n', e.pitch, 'on', e.tick
                 else:
                     continue
 
                 lastTime      =  time
                 time         +=  e.tick
                 lastVDataIdx  =  vDataIdx
-                print 'lastVDataIdx\t', lastVDataIdx
+                #print 'lastVDataIdx\t', lastVDataIdx
                 vDataIdx      =  int( float( time ) / eventWidth )
-                print 'vDataIdx\t', vDataIdx
+                #print 'vDataIdx\t', vDataIdx
                 # update the set of notes currently on as of this midi event
                 lastNotesOn   =  notesOn.copy( )
-                print 'lastNotesOn\t', lastNotesOn
+                #print 'lastNotesOn\t', lastNotesOn
                 key  =  ( e.channel, e.pitch )
                 if isOn:
                     notesOn[ key ]  =  time
                 else:
                     if key in notesOn:
                         del notesOn[ key ]
-                print 'notesOn\t\t', notesOn
+                #print 'notesOn\t\t', notesOn
 
                 # use the notes that were on before this midi event to construct a fill
                 # for time intervening between that midi event and this one
                 fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-                print 'fillEvent\t', fillEvent
+                #print 'fillEvent\t', fillEvent
 
                 if buildingEvent  ==  None:
                     buildingEvent  =  { e.pitch: OFF_ON }
-                    print 'NEW buildingEvent', buildingEvent
+                    #print 'NEW buildingEvent', buildingEvent
                     continue
 
                 # logic
@@ -156,28 +157,28 @@ class MidiKeras:
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
                 if lastVDataIdx == vDataIdx:
-                    print 'buildingEvent before', buildingEvent
+                    #print 'buildingEvent before', buildingEvent
                     buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                    print 'UPDATE buildingEvent', buildingEvent
+                    #print 'UPDATE buildingEvent', buildingEvent
                 else:
                     if buildingEvent not in self.vocab:
                         self.vocab.append( buildingEvent.copy( ) )
                     buildingEventIdx  =  self.vocab.index( buildingEvent )
                     vData.append( buildingEventIdx )
-                    print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
+                    #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
                     if fillEvent not in self.vocab:
                         self.vocab.append( fillEvent.copy( ) )
                     fillEventIdx  =  self.vocab.index( fillEvent )
                     while len( vData )  <  vDataIdx:
                         vData.append( fillEventIdx )
-                        print 'APPENDING fill', fillEvent, '(' + str( fillEvent ) + ')'
+                        #print 'APPENDING fill', fillEvent, '(' + str( fillEvent ) + ')'
 
                     # e.g: key = ( channel, pitch )
                     buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-                    print 'NEW buildingEvent', buildingEvent
+                    #print 'NEW buildingEvent', buildingEvent
                     buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                    print 'UPDATE buildingEvent', buildingEvent
+                    #print 'UPDATE buildingEvent', buildingEvent
 
             # finally
             if buildingEvent:
@@ -185,7 +186,7 @@ class MidiKeras:
                     self.vocab.append( buildingEvent.copy( ) )
                 buildingEventIdx  =  self.vocab.index( buildingEvent )
                 vData.append( buildingEventIdx )
-                print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
+                #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
             if vData:
                 ret.append( vData )
@@ -193,19 +194,79 @@ class MidiKeras:
         return ret
 
 
+    def genModel( self, batchShape ):
+        print 'genModel ('
+        print '\tbatchShape', batchShape
+        print ')'
+        model = Sequential( )
+        model.add( Embedding( len( self.vocab ), 25, mask_zero = True, batch_input_shape = batchShape ) )
+        #model.add( LSTM( 1000, return_sequences = True, stateful = True ) )
+        model.add( LSTM( 100, stateful = True ) )
+        for i in range( 10 ):
+            model.add( Highway( activation = 'relu' ) )
+        model.add( Dense( len( self.vocab ), activation = 'softmax' ) )
+        rmsProp  =  RMSprop( lr = 0.001 )
+        model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
+        return model
+
+    def genFuncModel( self, batchShape ):
+        print 'genFuncModel ('
+        print '\tbatchShape', batchShape
+        print ')'
+
+        inputs  =  Input( batch_shape = batchShape )
+        embed   =  Embedding( len( self.vocab ), 25, mask_zero = True )( inputs )
+        layer   =  LSTM( 25, stateful = True )( embed )
+        for i in range( 10 ):
+            layer  =  Highway( activation = 'relu' )( layer )
+        predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
+
+        model    =  Model( input = inputs, output = predictions )
+        rmsProp  =  RMSprop( lr = 0.002 )
+        model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
+
+        return model
+
+
+    def genFuncModel2( self, model ):
+
+        embedLayer  =  Embedding( len( self.vocab ), 25, mask_zero = True )
+
+        inputs  =  Input( batch_shape = model.input_shape )
+        embed  =  embedLayer( inputs )
+        layer   =  LSTM( 25, stateful = True )( embed )
+        for i in range( 10 ):
+            layer  =  Highway( activation = 'relu' )( layer )
+        predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
+        argmax  =  Lambda( lambda x: K.argmax( x ), output_shape = (1, ) )( predictions )
+        embedOut  =  embedLayer( argmax )
+
+        newModel  =  Model( input = inputs, output = embedOut )
+        rmsProp  =  RMSprop( lr = 0.002 )
+        newModel.compile( optimizer = rmsProp, loss = 'mean_squared_error', metrics = [ 'accuracy' ] )
+
+        return newModel
+
+
     # for stateful RNNs
     def formatData(self, data):
+        if not data:
+            return ([], [])
         d1 = len(data)
         d2 = max([len(x) for x in data]) - 1
         d3 = len(self.vocab)
         print 'd1 d2 d3', d1, d2, d3
+
         fData =   np.zeros((d1, d2), dtype='int32')
         fLabels = np.zeros((d1, d2, d3), dtype='int32')
+
         for i, track in enumerate(data):
             fData[i, :len(track) - 1] = track[:-1]
             fLabels[i, :len(track) - 1, :] = to_categorical([[x] for x in track[1:]], d3)
+
         fData = np.reshape(fData.T, (d1 * d2, 1))
         fLabels = np.reshape(np.transpose(fLabels, (1, 0, 2)), (d1 * d2, d3))
+
         return (fData, fLabels)
 
 
@@ -454,17 +515,6 @@ class MidiKeras:
     #            p += 2
     #    fLabels = to_categorical(fLabels.astype('int'), len(self.vocab))
     #    return (fData, fLabels)
-
-    def genModel(self, batchShape):
-        model = Sequential()
-        model.add(Embedding(len(self.vocab), 32, mask_zero = True, batch_input_shape = batchShape))
-        model.add(LSTM(32, return_sequences = True, stateful = True))
-        model.add(LSTM(32, stateful = True))
-        for i in range(20):
-            model.add(Highway(activation = 'relu'))
-        model.add(Dense(len(self.vocab), activation = 'softmax'))
-        model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-        return model
 
     # iter-10
     #def genModel(self, batchShape):
