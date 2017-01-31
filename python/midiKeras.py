@@ -209,43 +209,91 @@ class MidiKeras:
         model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
         return model
 
-    def genFuncModel( self, batchShape ):
-        print 'genFuncModel ('
-        print '\tbatchShape', batchShape
-        print ')'
+    def genLayers( self, batchShape ):
+        layers = [ ]
+        layers.append( Input( batch_shape = batchShape ) )
+        layers.append( Embedding( len( self.vocab ), 25, mask_zero = True ) )
+        layers.append( LSTM( 100, stateful = True ) )
+        for i in range( 5 ):
+            layers.append( Highway( activation = 'relu' ) )
+        layers.append( Dense( len( self.vocab ), activation = 'softmax' ) )
+        return layers
 
-        inputs  =  Input( batch_shape = batchShape )
-        embed   =  Embedding( len( self.vocab ), 25, mask_zero = True )( inputs )
-        layer   =  LSTM( 25, stateful = True )( embed )
-        for i in range( 10 ):
-            layer  =  Highway( activation = 'relu' )( layer )
-        predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
+    def genFuncModel( self, layers ):
+        layer  =  inputs  =  layers[ 0 ]
 
-        model    =  Model( input = inputs, output = predictions )
-        rmsProp  =  RMSprop( lr = 0.002 )
+        for l in layers[ 1: ]:
+            layer  =  l( layer )
+
+        model  =  Model( input = inputs, output = layer )
+        rmsProp  =  RMSprop( lr = 0.001 )
         model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
 
         return model
 
+    def genFuncModel2( self, layers ):
+        layer  =  inputs  =  layers[ 0 ]
 
-    def genFuncModel2( self, model ):
+        for l in layers[ 1: ]:
+            layer  =  l( layer )
 
-        embedLayer  =  Embedding( len( self.vocab ), 25, mask_zero = True )
+        layer  =  Lambda( lambda x: K.argmax( x ), output_shape = (1, ) )( layer )
 
-        inputs  =  Input( batch_shape = model.input_shape )
-        embed  =  embedLayer( inputs )
-        layer   =  LSTM( 25, stateful = True )( embed )
-        for i in range( 10 ):
-            layer  =  Highway( activation = 'relu' )( layer )
-        predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
-        argmax  =  Lambda( lambda x: K.argmax( x ), output_shape = (1, ) )( predictions )
-        embedOut  =  embedLayer( argmax )
+        if type( layers[ 1 ] ) == Embedding:
+            layer  =  layers[ 1 ]( layer )
 
-        newModel  =  Model( input = inputs, output = embedOut )
-        rmsProp  =  RMSprop( lr = 0.002 )
-        newModel.compile( optimizer = rmsProp, loss = 'mean_squared_error', metrics = [ 'accuracy' ] )
+        model  =  Model( input = inputs, output = layer )
+        rmsProp  =  RMSprop( lr = 0.001 )
+        model.compile( optimizer = rmsProp, loss = 'mean_squared_error' )
 
-        return newModel
+        return model
+
+    def convertLabels( self, labels, layer ):
+        shape  =  ( labels.shape[ 0 ], 1, layer.output_shape[ -1 ] )
+        ret    =  np.zeros( shape )
+
+        for i, label in enumerate( labels ):
+            ret[ i, 0, : ] = layer.call( np.array( np.argmax( label ) ) ).eval( )
+
+        return ret
+
+    #def genFuncModel( self, batchShape ):
+    #    print 'genFuncModel ('
+    #    print '\tbatchShape', batchShape
+    #    print ')'
+
+    #    inputs  =  Input( batch_shape = batchShape )
+    #    embed   =  Embedding( len( self.vocab ), 25, mask_zero = True )( inputs )
+    #    layer   =  LSTM( 25, stateful = True )( embed )
+    #    for i in range( 10 ):
+    #        layer  =  Highway( activation = 'relu' )( layer )
+    #    predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
+
+    #    model    =  Model( input = inputs, output = predictions )
+    #    rmsProp  =  RMSprop( lr = 0.002 )
+    #    model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
+
+    #    return model
+
+
+    #def genFuncModel2( self, model ):
+
+    #    embedLayer  =  Embedding( len( self.vocab ), 25, mask_zero = True )
+
+    #    inputs  =  Input( batch_shape = model.input_shape )
+    #    embed  =  embedLayer( inputs )
+    #    layer   =  LSTM( 25, stateful = True )( embed )
+    #    for i in range( 10 ):
+    #        layer  =  Highway( activation = 'relu' )( layer )
+    #    predictions  =  Dense( len( self.vocab ), activation = 'softmax' )( layer )
+    #    argmax  =  Lambda( lambda x: K.argmax( x ), output_shape = (1, ) )( predictions )
+    #    embedOut  =  embedLayer( argmax )
+
+    #    newModel  =  Model( input = inputs, output = embedOut )
+    #    rmsProp  =  RMSprop( lr = 0.002 )
+    #    newModel.compile( optimizer = rmsProp, loss = 'mean_squared_error', metrics = [ 'accuracy' ] )
+
+    #    return newModel
 
 
     # for stateful RNNs

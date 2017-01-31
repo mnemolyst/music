@@ -117,6 +117,7 @@ class Trainer:
             f.write(self.model.to_json())
         self.model.save_weights(pathPrefix + '-weights.h5')
 
+
 def scrapeDir( dir ):
     ret = [ ]
     for f in listdir( dir ):
@@ -126,6 +127,7 @@ def scrapeDir( dir ):
         elif re.match( '(.*)\.mid', full ):
             ret.append( full )
     return ret
+
 
 def trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData = [ ], fTestLabels = [ ] ):
     global model
@@ -156,6 +158,7 @@ def trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData = [ ], fTestLa
     trainMetrics /= ( len( fTrainData ) / float( batchShape[0] ) )
     print zip( model.metrics_names, trainMetrics )
 
+
 def dumpEmbeddingWeights( fileName ):
     global model, pathPrefix
 
@@ -169,10 +172,12 @@ def dumpEmbeddingWeights( fileName ):
 
     img.save( path.join( THIS_PATH, 'vis_debug', fileName + '.png' ) )
 
+
 def doIt( a, b ):
     for i in range( a, b ):
         trainAndTest((1,1), fTrainData, fTrainLabels)
         dumpEmbeddingWeights( 'test' + str(i) )
+
 
 if __name__ == '__main__':
 
@@ -260,7 +265,8 @@ if __name__ == '__main__':
     testChunkSize      =  0
     testChunk          =  [ ]
     batchShape         =  ( 1, 1 )
-    model              =  midiKeras.genFuncModel( batchShape )
+    layers             =  midiKeras.genLayers( batchShape )
+    model              =  midiKeras.genFuncModel( layers )
 
     # loop for number of training epochs
         # loop through every training file
