@@ -129,7 +129,7 @@ def scrapeDir( dir ):
     return ret
 
 
-def trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData = [ ], fTestLabels = [ ] ):
+def trainAndTest( batchLen, fTrainData, fTrainLabels, fTestData = [ ], fTestLabels = [ ] ):
     global model
 
     #print 'trainAndTest ('
@@ -137,25 +137,25 @@ def trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData = [ ], fTestLa
     #print '\tfTrainLabels', fTrainLabels
     #print '\tfTestData', fTestData
     #print '\tfTestLabels', fTestLabels
-    #print '\tbatchShape', batchShape
+    #print '\tbatchLen', batchLen
     #print ')'
 
     trainMetrics = np.zeros( ( len( model.metrics_names ), ) )
 
     model.reset_states()
     leadIn = 8
-    for j in range( 0, len( fTrainData ), batchShape[0] ):
+    for j in range( 0, len( fTrainData ), batchLen ):
 
-        batchX  =  fTrainData[ j:j + batchShape[ 0 ] ]
+        batchX  =  fTrainData[ j:j + batchLen ]
 
         if leadIn > 0:
             model.predict_on_batch( batchX )
             leadIn -= 1
         else:
-            batchY  =  fTrainLabels[ j:j + batchShape[ 0 ] ]
+            batchY  =  fTrainLabels[ j:j + batchLen ]
             trainMetrics += model.train_on_batch( batchX, batchY )
 
-    trainMetrics /= ( len( fTrainData ) / float( batchShape[0] ) )
+    trainMetrics /= ( len( fTrainData ) / float( batchLen ) )
     print zip( model.metrics_names, trainMetrics )
 
 
@@ -175,7 +175,7 @@ def dumpEmbeddingWeights( fileName ):
 
 def doIt( a, b ):
     for i in range( a, b ):
-        trainAndTest((1,1), fTrainData, fTrainLabels)
+        trainAndTest(1, fTrainData, fTrainLabels)
         dumpEmbeddingWeights( 'test' + str(i) )
 
 
@@ -248,17 +248,20 @@ if __name__ == '__main__':
     for d in trainDirs:
         trainFiles.extend( scrapeDir( d ) )
 
-    # init midiKeras.vocab
-    for f in trainFiles:
+    # initialize midiKeras.vocab
+    print 'initializing vocab'
+    for i, f in enumerate( trainFiles ):
         try:
+            print str(i) + ' / ' + str(len(trainFiles)) + ' ( ' + f + ' )'
             midiKeras.oneStep( f )
         except Exception, e:
             continue
 
     # read training files, add to vocab (if addToVocab), and generate training data
+    fileData           =  None
     trainData          =  []
     epochCnt           =  0
-    maxTrainChunkSize  =  100000
+    maxTrainChunkSize  =  1000
     trainChunkSize     =  0
     trainChunk         =  [ ]
     maxTestChunkSize   =  100
@@ -270,34 +273,39 @@ if __name__ == '__main__':
 
     # loop for number of training epochs
         # loop through every training file
-            # fill trainChunk then testChunk until full
+            # fill trainChunk, then testChunk, until both are full
             # when full, train network once, test it, collect stats, empty chunks
-    pauseForTraining = False
     while epochCnt < maxEpochs:
         print 'epochCnt', epochCnt
         for i, f in enumerate( trainFiles ):
-            print f, str( i + 1 ) + '/' + str( len( trainFiles ) )
+            print f, '( ' + str( i + 1 ) + '/' + str( len( trainFiles ) ) + ' )'
             try:
-                fileData = midiKeras.oneStep( f )
+                if fileData == None:
+                    fileData = midiKeras.oneStep( f )
             except Exception, e:
                 print 'failed:', f
                 continue
             print 'fileData', fileData
 
-            fileDataSize = sum( len( x ) for x in fileData )
+            fileDataSize    =  sum( len( x ) for x in fileData )
+            print 'fileDataSize', fileDataSize
+            trainChunkSize  =  sum( len( x ) for x in trainChunk )
+            print 'trainChunkSize', trainChunkSize
 
-            trainChunkSize = sum( len( x ) for x in trainChunk )
             if trainChunkSize + fileDataSize  <  maxTrainChunkSize:
                 trainChunk.extend( fileData )
+                fileData = None
             else:
                 testChunkSize = sum( len( x ) for x in testChunk )
+                print 'testChunkSize', testChunkSize
                 if testChunkSize + fileDataSize  <  maxTestChunkSize:
                     testChunk.extend( fileData )
+                    fileData = None
                 else:
-                    ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainData )
-                    ( fTestData, fTestLabels ) = midiKeras.formatData( testData )
-                    batchShape = ( len( trainData ), 1 )
-                    trainAndTest( batchShape, fTrainData, fTrainLabels, fTestData, fTestLabels )
+                    ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainChunk )
+                    ( fTestData, fTestLabels ) = midiKeras.formatData( testChunk )
+                    batchShape = ( len( trainChunk ), 1 )
+                    trainAndTest( batchShape[ 0 ], fTrainData, fTrainLabels, fTestData, fTestLabels )
                     trainChunk = [ ]
                     testChunk  = [ ]
 
@@ -309,6 +317,12 @@ if __name__ == '__main__':
 
 
     ( fTrainData, fTrainLabels ) = midiKeras.formatData( fileData )
+
+    ################
+    #model = midiKeras.genFuncModel2(layers)
+    #fTrainLabels = midiKeras.convertLabels(fTrainLabels,layers[1])
+    ################
+
     quit()
 
 
