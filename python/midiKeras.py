@@ -107,6 +107,7 @@ class MidiKeras:
         ret = [ ]
 
         for track in pattern:
+            events        = [ ]
             vData         = [ ] # indices into self.vocab
             vDataIdx      = None
             time          = 0
@@ -165,6 +166,7 @@ class MidiKeras:
                         self.vocab.append( buildingEvent.copy( ) )
                     buildingEventIdx  =  self.vocab.index( buildingEvent )
                     vData.append( buildingEventIdx )
+                    events.append( buildingEvent.copy( ) )
                     #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
                     if fillEvent not in self.vocab:
@@ -172,6 +174,7 @@ class MidiKeras:
                     fillEventIdx  =  self.vocab.index( fillEvent )
                     while len( vData )  <  vDataIdx:
                         vData.append( fillEventIdx )
+                        events.append( fillEvent.copy( ) )
                         #print 'APPENDING fill', fillEvent, '(' + str( fillEvent ) + ')'
 
                     # e.g: key = ( channel, pitch )
@@ -186,10 +189,56 @@ class MidiKeras:
                     self.vocab.append( buildingEvent.copy( ) )
                 buildingEventIdx  =  self.vocab.index( buildingEvent )
                 vData.append( buildingEventIdx )
+                events.append( buildingEvent.copy( ) )
                 #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
-            if vData:
-                ret.append( vData )
+            eLists = [ ]
+            startIdx = 0
+            minDiff = 4
+            maxDiff = 30
+            keepGoing = True
+            print 'events', events
+            while keepGoing:
+                diffCount  =  0
+                numDiff  =  8#random.randint( minDiff, maxDiff )
+                print 'numDiff', numDiff
+                eList  =  [ ]
+                lastHappened = 0
+                eIdx = startIdx
+                print 'startIdx', startIdx
+                while diffCount < numDiff  and  eIdx < len( events ):
+                    if len( eList ) == 0  and  events[ eIdx ] == { }:
+                        eIdx += 1
+                        continue
+
+                    if len( eList ) == 0  or  eList[ -1 ] != events[ eIdx ]:
+                        diffCount += 1
+
+                    eList.append( events[ eIdx ] )
+
+                    if events[ eIdx ].keys( ) != [ ]:
+                        lastHappened = len( eList )
+
+                    eIdx += 1
+
+                if eIdx  >=  len( events ):
+                    keepGoing  =  False
+
+                startIdx += 4
+                print 'eList', eList
+                eList = eList[ : lastHappened ]
+                print 'lastHappened', lastHappened
+                print 'eList', eList
+                if eList != [ ]  and  eList[ -1 ].keys( ) != [ ]:
+                    zeroPitch  =  min( eList[ -1 ].keys( ) )
+                    print 'zeroPitch', zeroPitch
+                    eLists.append( eList )
+
+            if eLists:
+                ret.extend( eLists )
+
+            #if vData:
+                #ret.append( vData )
 
         return ret
 

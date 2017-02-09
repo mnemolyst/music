@@ -261,13 +261,9 @@ if __name__ == '__main__':
     fileData           =  None
     trainData          =  []
     epochCnt           =  0
-    maxTrainChunkSize  =  1000
-    trainChunkSize     =  0
     trainChunk         =  [ ]
-    maxTestChunkSize   =  100
-    testChunkSize      =  0
     testChunk          =  [ ]
-    batchShape         =  ( 1, 1 )
+    batchShape         =  ( 8, 1 )
     layers             =  midiKeras.genLayers( batchShape )
     model              =  midiKeras.genFuncModel( layers )
 
@@ -287,11 +283,8 @@ if __name__ == '__main__':
                 continue
             print 'fileData', fileData
 
-            fileDataSize    =  sum( len( x ) for x in fileData )
-            print 'fileDataSize', fileDataSize
-            trainChunkSize  =  sum( len( x ) for x in trainChunk )
-            print 'trainChunkSize', trainChunkSize
-
+            chunksNeeded  =  batchShape[ 0 ] - len( trainChunk )
+            trainChunk.extend( fileData[ :chunksNeeded ] )
             if trainChunkSize + fileDataSize  <  maxTrainChunkSize:
                 trainChunk.extend( fileData )
                 fileData = None
@@ -301,10 +294,9 @@ if __name__ == '__main__':
                 if testChunkSize + fileDataSize  <  maxTestChunkSize:
                     testChunk.extend( fileData )
                     fileData = None
-                else:
+                elif trainChunkSize > 0:
                     ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainChunk )
                     ( fTestData, fTestLabels ) = midiKeras.formatData( testChunk )
-                    batchShape = ( len( trainChunk ), 1 )
                     trainAndTest( batchShape[ 0 ], fTrainData, fTrainLabels, fTestData, fTestLabels )
                     trainChunk = [ ]
                     testChunk  = [ ]
