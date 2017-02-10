@@ -257,6 +257,10 @@ if __name__ == '__main__':
         except Exception, e:
             continue
 
+    print 'vocab:'
+    for i, v in enumerate( midiKeras.vocab ):
+        print i, v
+
     # read training files, add to vocab (if addToVocab), and generate training data
     fileData           =  None
     trainData          =  []
@@ -302,10 +306,6 @@ if __name__ == '__main__':
                     testChunk  = [ ]
 
         epochCnt += 1
-
-    print 'vocab:'
-    for i, v in enumerate( midiKeras.vocab ):
-        print i, v
 
 
     ( fTrainData, fTrainLabels ) = midiKeras.formatData( fileData )

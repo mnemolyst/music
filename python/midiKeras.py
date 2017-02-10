@@ -115,97 +115,69 @@ class MidiKeras:
             buildingEvent = None
 
             for e in track:
-                # data
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
-                    #print '\n', e.pitch, 'off', e.tick
                 elif isinstance( e, midi.NoteOnEvent ):
                     isOn = True
-                    #print '\n', e.pitch, 'on', e.tick
                 else:
                     continue
 
                 lastTime      =  time
                 time         +=  e.tick
                 lastVDataIdx  =  vDataIdx
-                #print 'lastVDataIdx\t', lastVDataIdx
                 vDataIdx      =  int( float( time ) / eventWidth )
-                #print 'vDataIdx\t', vDataIdx
                 # update the set of notes currently on as of this midi event
                 lastNotesOn   =  notesOn.copy( )
-                #print 'lastNotesOn\t', lastNotesOn
                 key  =  ( e.channel, e.pitch )
                 if isOn:
                     notesOn[ key ]  =  time
                 else:
                     if key in notesOn:
                         del notesOn[ key ]
-                #print 'notesOn\t\t', notesOn
 
                 # use the notes that were on before this midi event to construct a fill
                 # for time intervening between that midi event and this one
                 fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-                #print 'fillEvent\t', fillEvent
 
                 if buildingEvent  ==  None:
                     buildingEvent  =  { e.pitch: OFF_ON }
-                    #print 'NEW buildingEvent', buildingEvent
                     continue
-
-                # logic
 
                 # if we have moved on to another discretized time, vocab and append
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
                 if lastVDataIdx == vDataIdx:
-                    #print 'buildingEvent before', buildingEvent
                     buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                    #print 'UPDATE buildingEvent', buildingEvent
                 else:
-                    if buildingEvent not in self.vocab:
-                        self.vocab.append( buildingEvent.copy( ) )
-                    buildingEventIdx  =  self.vocab.index( buildingEvent )
-                    vData.append( buildingEventIdx )
                     events.append( buildingEvent.copy( ) )
-                    #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
-                    if fillEvent not in self.vocab:
-                        self.vocab.append( fillEvent.copy( ) )
-                    fillEventIdx  =  self.vocab.index( fillEvent )
-                    while len( vData )  <  vDataIdx:
-                        vData.append( fillEventIdx )
+                    while len( events )  <  vDataIdx:
                         events.append( fillEvent.copy( ) )
-                        #print 'APPENDING fill', fillEvent, '(' + str( fillEvent ) + ')'
 
                     # e.g: key = ( channel, pitch )
                     buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-                    #print 'NEW buildingEvent', buildingEvent
                     buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                    #print 'UPDATE buildingEvent', buildingEvent
 
             # finally
             if buildingEvent:
-                if buildingEvent not in self.vocab:
-                    self.vocab.append( buildingEvent.copy( ) )
-                buildingEventIdx  =  self.vocab.index( buildingEvent )
-                vData.append( buildingEventIdx )
                 events.append( buildingEvent.copy( ) )
-                #print 'APPENDING built', buildingEvent, '(' + str( buildingEventIdx ) + ')'
 
-            eLists = [ ]
+            #print 'events', events
+
+            # break the events up into chunks and shift their pitches so every chunk
+            # ends on pitch zero
             startIdx = 0
-            minDiff = 4
-            maxDiff = 30
+            minDiff = 8
+            maxDiff = 20
             keepGoing = True
-            print 'events', events
             while keepGoing:
                 diffCount  =  0
-                numDiff  =  8#random.randint( minDiff, maxDiff )
-                print 'numDiff', numDiff
+                numDiff  =  random.randint( minDiff, maxDiff )
                 eList  =  [ ]
+                vList  =  [ ]
                 lastHappened = 0
                 eIdx = startIdx
-                print 'startIdx', startIdx
+
                 while diffCount < numDiff  and  eIdx < len( events ):
                     if len( eList ) == 0  and  events[ eIdx ] == { }:
                         eIdx += 1
@@ -225,20 +197,21 @@ class MidiKeras:
                     keepGoing  =  False
 
                 startIdx += 4
-                print 'eList', eList
                 eList = eList[ : lastHappened ]
-                print 'lastHappened', lastHappened
-                print 'eList', eList
+                #print '\neList', eList
+
                 if eList != [ ]  and  eList[ -1 ].keys( ) != [ ]:
                     zeroPitch  =  min( eList[ -1 ].keys( ) )
-                    print 'zeroPitch', zeroPitch
-                    eLists.append( eList )
+                    eList  =  [ dict( [ ( p - zeroPitch, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+                    #print '\nshifted eList', eList
+                    for e in eList:
+                        if e not in self.vocab:
+                            self.vocab.append( e )
+                        eIdx  =  self.vocab.index( e )
+                        vList.append( eIdx )
 
-            if eLists:
-                ret.extend( eLists )
-
-            #if vData:
-                #ret.append( vData )
+                if vList:
+                    ret.append( vList )
 
         return ret
 
