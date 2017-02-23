@@ -104,7 +104,9 @@ class MidiKeras:
         eventWidth = float( pattern.resolution ) / 4.0
 
         # return value
-        ret = [ ]
+        seqLen = 16 * 3
+        retX = np.zeros( ( 0, seqLen ) )
+        retY = np.zeros( ( 
 
         for track in pattern:
             events        = [ ]
@@ -139,6 +141,7 @@ class MidiKeras:
                 # for time intervening between that midi event and this one
                 fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
 
+                # reset buildingEvent and short-circuit on first run
                 if buildingEvent  ==  None:
                     buildingEvent  =  { e.pitch: OFF_ON }
                     continue
@@ -146,9 +149,7 @@ class MidiKeras:
                 # if we have moved on to another discretized time, vocab and append
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
-                if lastVDataIdx == vDataIdx:
-                    buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
-                else:
+                if lastVDataIdx != vDataIdx:
                     events.append( buildingEvent.copy( ) )
 
                     while len( events )  <  vDataIdx:
@@ -156,29 +157,41 @@ class MidiKeras:
 
                     # e.g: key = ( channel, pitch )
                     buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-                    buildingEvent  =  self.updateEvent( buildingEvent, e.pitch, isOn )
+
+                if isOn:
+                    if e.pitch not in buildingEvent:
+                        buildingEvent[ e.pitch ] = OFF_ON
+                    elif buildingEvent[ e.pitch ] == ON_OFF:
+                        buildingEvent[ e.pitch ] = ON_OFF_ON
+                    elif buildingEvent[ e.pitch ] == ON_ON:
+                        buildingEvent[ e.pitch ] = ON_OFF_ON
+                else:
+                    if e.pitch not in buildingEvent:
+                        pass
+                    elif buildingEvent[ e.pitch ] == OFF_ON:
+                        buildingEvent[ e.pitch ] = OFF_ON_OFF
+                    elif buildingEvent[ e.pitch ] == ON_ON:
+                        buildingEvent[ e.pitch ] = ON_OFF
+
 
             # finally
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
 
-            #print 'events', events
+            print 'events', events
 
-            # break the events up into chunks and shift their pitches so every chunk
-            # ends on pitch zero
+            # break the events up into chunks
             startIdx = 0
-            minDiff = 8
-            maxDiff = 20
             keepGoing = True
             while keepGoing:
                 diffCount  =  0
-                numDiff  =  random.randint( minDiff, maxDiff )
+                numDiff  =  random.randint( 8, 20 )
                 eList  =  [ ]
                 vList  =  [ ]
                 lastHappened = 0
                 eIdx = startIdx
 
-                while diffCount < numDiff  and  eIdx < len( events ):
+                while ( diffCount < numDiff  or  len( eList ) > seqLen )  and  eIdx < len( events ):
                     if len( eList ) == 0  and  events[ eIdx ] == { }:
                         eIdx += 1
                         continue
@@ -200,9 +213,11 @@ class MidiKeras:
                 eList = eList[ : lastHappened ]
                 #print '\neList', eList
 
-                if eList != [ ]  and  eList[ -1 ].keys( ) != [ ]:
-                    zeroPitch  =  min( eList[ -1 ].keys( ) )
-                    eList  =  [ dict( [ ( p - zeroPitch, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+                # shift pitches so every chunk's penultimate event's lowest pitch is numbered zero
+                # TODO use the last event with a pitch - now we only consider the last in the list
+                if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
+                    zeroPitch  =  min( eList[ -2 ].keys( ) )
+                    eList  =  [ dict( [ ( p - 0, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
                     #print '\nshifted eList', eList
                     for e in eList:
                         if e not in self.vocab:
@@ -210,10 +225,11 @@ class MidiKeras:
                         eIdx  =  self.vocab.index( e )
                         vList.append( eIdx )
 
-                if vList:
-                    ret.append( vList )
+                    x = np.array( vList )
+                    retX.append( vList[ :-1 ] )
+                    retY.append( vList[ -1: ] )
 
-        return ret
+        return ( retX, retY )
 
 
     def genModel( self, batchShape ):
@@ -222,9 +238,9 @@ class MidiKeras:
         print ')'
         model = Sequential( )
         model.add( Embedding( len( self.vocab ), 25, mask_zero = True, batch_input_shape = batchShape ) )
-        #model.add( LSTM( 1000, return_sequences = True, stateful = True ) )
-        model.add( LSTM( 100, stateful = True ) )
-        for i in range( 10 ):
+        model.add( LSTM( 100, return_sequences = True, stateful = False ) )
+        model.add( LSTM( 100, stateful = False ) )
+        for i in range( 1 ):
             model.add( Highway( activation = 'relu' ) )
         model.add( Dense( len( self.vocab ), activation = 'softmax' ) )
         rmsProp  =  RMSprop( lr = 0.001 )
@@ -334,19 +350,15 @@ class MidiKeras:
             fData[i, :len(track) - 1] = track[:-1]
             fLabels[i, :len(track) - 1, :] = to_categorical([[x] for x in track[1:]], d3)
 
-        fData = np.reshape(fData.T, (d1 * d2, 1))
-        fLabels = np.reshape(np.transpose(fLabels, (1, 0, 2)), (d1 * d2, d3))
+        fData =   np.reshape( fData.T,                           (d1 * d2, 1 ))
+        fLabels = np.reshape( np.transpose(fLabels, (1, 0, 2)),  (d1 * d2, d3))
 
         return (fData, fLabels)
 
 
     def midiRip( self, midiFile, visDebug = False ):
-        global keyMap
         pattern = midi.read_midifile( midiFile )
-        if path.basename( midiFile ) in keyMap:
-            offset = keyMap[ path.basename( midiFile ) ] - 69
-        else:
-            offset = 0
+        offset = 0
 
         tracks = [ ]
         for track in pattern:

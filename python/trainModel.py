@@ -12,7 +12,7 @@ from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
 from keras import backend as K
 from theano import function
 #from keras.utils.visualize_util import plot
-#from keras.optimizers import RMSprop
+from keras.optimizers import RMSprop
 import PIL
 from random import random, randint, shuffle
 import math
@@ -262,14 +262,26 @@ if __name__ == '__main__':
         print i, v
 
     # read training files, add to vocab (if addToVocab), and generate training data
+    model = Sequential()
+    l1 = Embedding( len( midiKeras.vocab ), 10, input_length = 16 * 3 )
+    l2 = LSTM( 10 )
+    l3 = Dense( len( midiKeras.vocab ), activation = 'softmax' )
+    model.add( l1 )
+    model.add( l2 )
+    model.add( l3 )
+    rmsProp  =  RMSprop( lr = 0.001 )
+    model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
+    trainData = midiKeras.oneStep( trainFiles[ 0 ] )
+    print 'trainData', trainData
+    quit()
     fileData           =  None
     trainData          =  []
     epochCnt           =  0
     trainChunk         =  [ ]
     testChunk          =  [ ]
-    batchShape         =  ( 8, 1 )
+    batchShape         =  ( None, 16 * 3 )
     layers             =  midiKeras.genLayers( batchShape )
-    model              =  midiKeras.genFuncModel( layers )
+    model              =  midiKeras.genModel( batchShape )#FuncModel( layers )
 
     # loop for number of training epochs
         # loop through every training file
