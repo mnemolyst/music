@@ -9,6 +9,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import model_from_json
 from keras.models import Sequential, Model
 from keras.layers import Input, Embedding, LSTM, Dense, Activation, Highway
+from keras.utils.np_utils import to_categorical
 from keras import backend as K
 from theano import function
 #from keras.utils.visualize_util import plot
@@ -263,7 +264,7 @@ if __name__ == '__main__':
 
     # read training files, add to vocab (if addToVocab), and generate training data
     model = Sequential()
-    l1 = Embedding( len( midiKeras.vocab ), 10, input_length = 16 * 3 )
+    l1 = Embedding( len( midiKeras.vocab ), 10, input_length = 16 * 3, mask_zero = True )
     l2 = LSTM( 10 )
     l3 = Dense( len( midiKeras.vocab ), activation = 'softmax' )
     model.add( l1 )
@@ -271,8 +272,8 @@ if __name__ == '__main__':
     model.add( l3 )
     rmsProp  =  RMSprop( lr = 0.001 )
     model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
-    trainData = midiKeras.oneStep( trainFiles[ 0 ] )
-    print 'trainData', trainData
+    (x, y) = midiKeras.oneStep( trainFiles[ 0 ], returnTrainingData = True)
+    print 'x,y: ', x, ', ', y
     quit()
     fileData           =  None
     trainData          =  []

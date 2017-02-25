@@ -95,7 +95,7 @@ class MidiKeras:
         return x
 
 
-    def oneStep( self, midiFile ):
+    def oneStep( self, midiFile, returnTrainingData = False ):
 
         # the MIDI pattern
         pattern = midi.read_midifile( midiFile )
@@ -105,10 +105,13 @@ class MidiKeras:
 
         # return value
         seqLen = 16 * 3
-        retX = np.zeros( ( 0, seqLen ) )
-        retY = np.zeros( ( 
+        if returnTrainingData:
+            retX = np.zeros( ( 0, seqLen ) )
+            retY = np.zeros( ( 0, len( self.vocab ) ) )
 
         for track in pattern:
+            print 'track'
+
             events        = [ ]
             vData         = [ ] # indices into self.vocab
             vDataIdx      = None
@@ -182,32 +185,34 @@ class MidiKeras:
 
             # break the events up into chunks
             startIdx = 0
-            keepGoing = True
-            while keepGoing:
-                diffCount  =  0
-                numDiff  =  random.randint( 8, 20 )
-                eList  =  [ ]
-                vList  =  [ ]
-                lastHappened = 0
-                eIdx = startIdx
+            makeMoreChunks = True
+            while makeMoreChunks:
+                diffCount     =  0
+                numDiff       =  15 # arbitrary constant
+                eList         =  [ ]
+                vList         =  [ ]
+                lastHappened  =  0
+                eIdx          =  startIdx
 
-                while ( diffCount < numDiff  or  len( eList ) > seqLen )  and  eIdx < len( events ):
+                while diffCount < numDiff  and  len( eList ) < seqLen  and  eIdx < len( events ):
+                    # skip initial empty events
                     if len( eList ) == 0  and  events[ eIdx ] == { }:
                         eIdx += 1
                         continue
 
+                    # count number of times the event changes
                     if len( eList ) == 0  or  eList[ -1 ] != events[ eIdx ]:
                         diffCount += 1
 
                     eList.append( events[ eIdx ] )
 
-                    if events[ eIdx ].keys( ) != [ ]:
+                    if events[ eIdx ] != { }:
                         lastHappened = len( eList )
 
                     eIdx += 1
 
                 if eIdx  >=  len( events ):
-                    keepGoing  =  False
+                    makeMoreChunks  =  False
 
                 startIdx += 4
                 eList = eList[ : lastHappened ]
@@ -225,11 +230,17 @@ class MidiKeras:
                         eIdx  =  self.vocab.index( e )
                         vList.append( eIdx )
 
-                    x = np.array( vList )
-                    retX.append( vList[ :-1 ] )
-                    retY.append( vList[ -1: ] )
+                    if returnTrainingData:
+                        print 'vList', vList
+                        print 'seqLen', seqLen
+                        thisX  =  np.array( vList[ :-1 ] ).reshape((1, -1))
+                        retX  =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len( vList ) + 1)), 'constant' ) ) )
+                        retY  =  np.vstack( ( retY, to_categorical( vList[ -1: ], len(self.vocab) ) ) )
 
-        return ( retX, retY )
+        if returnTrainingData:
+            return ( retX, retY )
+        else:
+            return None
 
 
     def genModel( self, batchShape ):
