@@ -110,8 +110,6 @@ class MidiKeras:
             retY = np.zeros( ( 0, len( self.vocab ) ) )
 
         for track in pattern:
-            print 'track'
-
             events        = [ ]
             vData         = [ ] # indices into self.vocab
             vDataIdx      = None
@@ -181,7 +179,7 @@ class MidiKeras:
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
 
-            print 'events', events
+            #print 'events', events
 
             # break the events up into chunks
             startIdx = 0
@@ -216,14 +214,12 @@ class MidiKeras:
 
                 startIdx += 4
                 eList = eList[ : lastHappened ]
-                #print '\neList', eList
 
                 # shift pitches so every chunk's penultimate event's lowest pitch is numbered zero
                 # TODO use the last event with a pitch - now we only consider the last in the list
                 if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
                     zeroPitch  =  min( eList[ -2 ].keys( ) )
                     eList  =  [ dict( [ ( p - 0, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
-                    #print '\nshifted eList', eList
                     for e in eList:
                         if e not in self.vocab:
                             self.vocab.append( e )
@@ -231,11 +227,9 @@ class MidiKeras:
                         vList.append( eIdx )
 
                     if returnTrainingData:
-                        print 'vList', vList
-                        print 'seqLen', seqLen
-                        thisX  =  np.array( vList[ :-1 ] ).reshape((1, -1))
-                        retX  =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len( vList ) + 1)), 'constant' ) ) )
-                        retY  =  np.vstack( ( retY, to_categorical( vList[ -1: ], len(self.vocab) ) ) )
+                        thisX  =  np.array( vList[ :-1 ] ).reshape(( 1, -1 ))
+                        retX   =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len(vList) + 1)), 'constant' ) ) )
+                        retY   =  np.vstack( ( retY, to_categorical( vList[ -1: ], len(self.vocab) ) ) )
 
         if returnTrainingData:
             return ( retX, retY )
@@ -243,27 +237,24 @@ class MidiKeras:
             return None
 
 
-    def genModel( self, batchShape ):
-        print 'genModel ('
-        print '\tbatchShape', batchShape
-        print ')'
+    def genModel( self, inputLength ):
         model = Sequential( )
-        model.add( Embedding( len( self.vocab ), 25, mask_zero = True, batch_input_shape = batchShape ) )
-        model.add( LSTM( 100, return_sequences = True, stateful = False ) )
-        model.add( LSTM( 100, stateful = False ) )
-        for i in range( 1 ):
+        model.add( Embedding( len( self.vocab ), 25, mask_zero = True, input_length = inputLength, dropout = 0.5 ) )
+        #model.add( LSTM( 100, return_sequences = True, stateful = False ) )
+        model.add( LSTM( 100, stateful = False, dropout_W = 0.5, dropout_U = 0.5 ) )
+        for i in range( 10 ):
             model.add( Highway( activation = 'relu' ) )
         model.add( Dense( len( self.vocab ), activation = 'softmax' ) )
         rmsProp  =  RMSprop( lr = 0.001 )
         model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
         return model
 
-    def genLayers( self, batchShape ):
+    def genLayers( self, inputLength ):
         layers = [ ]
-        layers.append( Input( batch_shape = batchShape ) )
+        layers.append( Input( shape = (inputLength,) ) )
         layers.append( Embedding( len( self.vocab ), 25, mask_zero = True ) )
-        layers.append( LSTM( 100, stateful = True ) )
-        for i in range( 5 ):
+        layers.append( LSTM( 100, stateful = False ) )
+        for i in range( 10 ):
             layers.append( Highway( activation = 'relu' ) )
         layers.append( Dense( len( self.vocab ), activation = 'softmax' ) )
         return layers

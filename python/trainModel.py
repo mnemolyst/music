@@ -254,7 +254,7 @@ if __name__ == '__main__':
     for i, f in enumerate( trainFiles ):
         try:
             print str(i) + ' / ' + str(len(trainFiles)) + ' ( ' + f + ' )'
-            midiKeras.oneStep( f )
+            midiKeras.oneStep( f, returnTrainingData = False )
         except Exception, e:
             continue
 
@@ -262,28 +262,43 @@ if __name__ == '__main__':
     for i, v in enumerate( midiKeras.vocab ):
         print i, v
 
-    # read training files, add to vocab (if addToVocab), and generate training data
-    model = Sequential()
-    l1 = Embedding( len( midiKeras.vocab ), 10, input_length = 16 * 3, mask_zero = True )
-    l2 = LSTM( 10 )
-    l3 = Dense( len( midiKeras.vocab ), activation = 'softmax' )
-    model.add( l1 )
-    model.add( l2 )
-    model.add( l3 )
-    rmsProp  =  RMSprop( lr = 0.001 )
-    model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
-    (x, y) = midiKeras.oneStep( trainFiles[ 0 ], returnTrainingData = True)
-    print 'x,y: ', x, ', ', y
-    quit()
-    fileData           =  None
-    trainData          =  []
-    epochCnt           =  0
-    trainChunk         =  [ ]
-    testChunk          =  [ ]
-    batchShape         =  ( None, 16 * 3 )
-    layers             =  midiKeras.genLayers( batchShape )
-    model              =  midiKeras.genModel( batchShape )#FuncModel( layers )
+    batchSize    =  1
+    trainChunk   =  [ ]
+    inputLength  =  16 * 3
+    layers       =  midiKeras.genLayers( inputLength )
+    model        =  midiKeras.genFuncModel( layers )
 
+    while True:
+        for i in range( 0, len( trainFiles ), batchSize ):
+            ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+            for j in range( batchSize ):
+                if i + j >= len( trainFiles ):
+                    break
+                f = trainFiles[ i + j ]
+                print str( i + j + 1 ) + ' / ' + str( len(trainFiles) ) + ' ( ' + f + ' )'
+                ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
+                x  =  np.vstack( ( x, thisX ) )
+                y  =  np.vstack( ( y, thisY ) )
+            keepGoing  =  True
+            streak     =  0
+            iterCnt    =  0
+            while keepGoing:
+                metrics  =  model.train_on_batch( x, y )
+                iterCnt += 1
+                loss     =  float( metrics[ 0 ] )
+                acc      =  float( metrics[ 1 ] )
+                print 'iterCnt: ' + str( iterCnt ) + '\tloss: ' + str( loss ) + '\tacc: ' + str( acc )
+                #if acc > 0.5:
+                #    streak += 1
+                #    if streak == 5:
+                #        keepGoing = False
+                #else:
+                #    streak = 0
+                keepGoing = False
+
+    quit( )
+
+    #epochCnt  =  0
     # loop for number of training epochs
         # loop through every training file
             # fill trainChunk, then testChunk, until both are full
@@ -294,14 +309,17 @@ if __name__ == '__main__':
             print f, '( ' + str( i + 1 ) + '/' + str( len( trainFiles ) ) + ' )'
             try:
                 if fileData == None:
-                    fileData = midiKeras.oneStep( f )
+                    fileData = midiKeras.oneStep( f, returnTrainingData = True )
             except Exception, e:
                 print 'failed:', f
                 continue
             print 'fileData', fileData
 
-            chunksNeeded  =  batchShape[ 0 ] - len( trainChunk )
-            trainChunk.extend( fileData[ :chunksNeeded ] )
+            trainChunksNeeded  =  inputLength - len( trainChunk )
+            trainChunk.extend( fileData[ :trainChunksNeeded ] )
+            if trainChunksNeeded < len(fileData):
+                pass#testChunksNeeded  =  
+
             if trainChunkSize + fileDataSize  <  maxTrainChunkSize:
                 trainChunk.extend( fileData )
                 fileData = None
@@ -314,7 +332,7 @@ if __name__ == '__main__':
                 elif trainChunkSize > 0:
                     ( fTrainData, fTrainLabels ) = midiKeras.formatData( trainChunk )
                     ( fTestData, fTestLabels ) = midiKeras.formatData( testChunk )
-                    trainAndTest( batchShape[ 0 ], fTrainData, fTrainLabels, fTestData, fTestLabels )
+                    trainAndTest( inputLength, fTrainData, fTrainLabels, fTestData, fTestLabels )
                     trainChunk = [ ]
                     testChunk  = [ ]
 
@@ -329,54 +347,6 @@ if __name__ == '__main__':
     ################
 
     quit()
-
-
-    for i, f in enumerate( trainFiles ):
-        print f
-        print str(i) + '/' + str(len(trainFiles))
-        try:
-            #tracks = midiKeras.midiRip( f, visDebug = visDebug )
-            trainData.extend( midiKeras.oneStep( f ) )
-        except Exception, e:
-            print 'failed:', f
-            raise e
-            continue
-
-        #for track in tracks:
-        #    if len(track) == 0:
-        #        continue
-        #    #snippets = midiKeras.sliceAndDice( track, visDebug = visDebug )
-
-        #    #for snippet in snippets:
-        #    vData = midiKeras.vocabularize( track, addNew = addToVocab, visDebug = visDebug ) 
-
-        #    if {} in midiKeras.vocab:
-        #        vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
-        #    trainData.append( vData )
-
-        #    # print 'len vData', len( vData )
-        #    if doRewrite:
-        #        midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
-
-    # read testing files, add to vocab (if addToVocab), and generate testing data
-    testData = []
-    for f in testFiles:
-        print f
-        try:
-            tracks = midiKeras.midiRip( f )
-        except:
-            continue
-
-        for track in tracks:
-            vData = midiKeras.vocabularize( track, addNew = False )
-
-            if {} in midiKeras.vocab:
-                vData = midiKeras.stripSilence( vData, midiKeras.vocab.index( {} ) )
-            testData.append( vData )
-
-            print 'len vData', len( vData )
-            if doRewrite:
-                midiKeras.midiOut( vData, 'midi/rewrite/' + path.basename( f ), resolution )
 
     # if we have no training data, generate some random data
     #if not len(trainData):
