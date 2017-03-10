@@ -22,6 +22,7 @@ import json
 from pymongo import MongoClient
 import re
 from Tkinter import *
+import midi
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
@@ -187,14 +188,16 @@ class GUI:
         self.inputFiles   =  inputFiles
         self.curSongIdx   =  0
         self.curTrackIdx  =  0
+        self.channelSets  =  [ ]
 
     def changeSong( self, e ):
         self.curSongIdx  =  self.songLB.curselection( )[ 0 ]
-        print self.inputFiles[ self.curSongIdx ]
         tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
         self.trackLB.delete( 0, END )
         for i, track in enumerate( tracks ):
             self.trackLB.insert( END, 'Track ' + str( i ) )
+
+        self.resetChannelSets( )
 
     def changeTrack( self, e ):
         tracks            =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
@@ -208,7 +211,48 @@ class GUI:
             self.canvas.create_rectangle( ( x1, y, x2, y ) )
 
         for c in range( 16 ):
-            self.canvas.create_text( 0, 0.5 * ( 64 + c * 128 ), anchor = W, text = str( c + 1 ) )
+            self.canvas.create_text( 0, 0.5 * ( 64 + c * 128 ), anchor = W, text = str( c ) )
+
+        self.resetChannelSets( )
+
+    def addChannelSet( self ):
+        self.channelSets.append( list( self.channelLB.curselection( ) ) )
+        self.channelSetText.config( text = str( self.channelSets ) )
+
+    def resetChannelSets( self ):
+        self.channelSets  =  [ ]
+        self.channelSetText.config( text = str( self.channelSets ) )
+
+    def save( self ):
+        if self.channelSets  ==  [ ]:
+            print 'Empty channel set!'
+            return
+
+        pattern  =  midi.read_midifile( self.inputFiles[ self.curSongIdx ] )
+        savedSets  =  midi.Pattern( )
+        savedSets.resolution  =  pattern.resolution
+
+        for channelSet in self.channelSets:
+            for track in pattern:
+                thisSet  =  midi.Track( )
+                for event in track:
+                    if not hasattr( event, 'channel' )  or  event.channel in channelSet:
+                        thisSet.append( event )
+                savedSets.append( thisSet )
+
+        outPath  =  path.join( THIS_PATH, 'midi', 'train', 'filtered', path.basename( self.inputFiles[ self.curSongIdx ] ) )
+        f  =  open( outPath, 'w')
+        midi.write_midifile( f, savedSets )
+        f.close( )
+
+        f  =  open( path.join( THIS_PATH, 'midi', 'program.txt' ), 'a' )
+        line  =  self.inputFiles[ self.curSongIdx ] + '\t' + str( self.channelSets ) + '\n'
+        f.write( line )
+        f.close( )
+
+        self.resetChannelSets( )
+
+        print 'Saved!'
 
     def start( self ):
         self.leftFrame  =  Frame( self.master )
@@ -235,8 +279,20 @@ class GUI:
 
         self.channelLB  =  Listbox( self.leftFrame, selectmode = MULTIPLE )
         for c in range( 16 ):
-            self.channelLB.insert( END, str( c + 1 ) )
+            self.channelLB.insert( END, str( c ) )
         self.channelLB.pack( side = TOP )
+
+        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Add Channel Set', command = self.addChannelSet )
+        self.addChannelSetBtn.pack( side = TOP )
+
+        self.resetChannelSetsBtn  =  Button( self.leftFrame, text = 'Reset Channel Sets', command = self.resetChannelSets )
+        self.resetChannelSetsBtn.pack( side = TOP )
+
+        self.channelSetText  =  Label( self.leftFrame, text = '[]' )
+        self.channelSetText.pack( side = TOP )
+
+        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Save', command = self.save )
+        self.addChannelSetBtn.pack( side = TOP )
 
         self.leftFrame.pack( side = LEFT )
 

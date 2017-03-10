@@ -177,8 +177,6 @@ class MidiKeras:
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
 
-            print 'events', events
-
             # break the events up into chunks
             startIdx        =  0
             makeMoreChunks  =  True
@@ -363,13 +361,10 @@ class MidiKeras:
 
         tracks = [ ]
         for i, track in enumerate( pattern ):
-            print 'track', i
             notes = [ ]
             time = 0
             notesOn = {}
             for e in track:
-                if type(e) == midi.ProgramChangeEvent:
-                    print e
                 time += e.tick
                 if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
                     key = ( e.channel, e.pitch - offset )
