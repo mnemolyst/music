@@ -1,7 +1,6 @@
 import midi
 import glob
 import sys
-import random
 from os import path
 import json
 
@@ -103,19 +102,18 @@ class MidiKeras:
         # eventWidth = one sixteenth-note's worth of midi ticks
         eventWidth = float( pattern.resolution ) / 4.0
 
-        # return value
+        # return values retX and retY
         seqLen = 16 * 3
         if returnTrainingData:
             retX = np.zeros( ( 0, seqLen ) )
             retY = np.zeros( ( 0, len( self.vocab ) ) )
 
-        for track in pattern:
-            events        = [ ]
-            vData         = [ ] # indices into self.vocab
-            vDataIdx      = None
-            time          = 0
-            notesOn       = { }
-            buildingEvent = None
+        for i, track in enumerate( pattern ):
+            events         =  [ ]
+            timeIdx        =  None
+            time           =  0
+            notesOn        =  { }
+            buildingEvent  =  None
 
             for e in track:
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
@@ -125,12 +123,18 @@ class MidiKeras:
                 else:
                     continue
 
-                lastTime      =  time
-                time         +=  e.tick
-                lastVDataIdx  =  vDataIdx
-                vDataIdx      =  int( float( time ) / eventWidth )
-                # update the set of notes currently on as of this midi event
+                # reset buildingEvent and short-circuit on first run
+                if buildingEvent  ==  None:
+                    buildingEvent  =  { e.pitch: OFF_ON }
+                    continue
+
                 lastNotesOn   =  notesOn.copy( )
+
+                # use the notes that were on before this midi event to construct a fill
+                # for time intervening between that midi event and this one
+                fillEvent  =  dict( [ ( k[ 1 ], ON_ON ) for k in lastNotesOn ] )
+
+                # update the set of notes currently on as of this midi event
                 key  =  ( e.channel, e.pitch )
                 if isOn:
                     notesOn[ key ]  =  time
@@ -138,26 +142,21 @@ class MidiKeras:
                     if key in notesOn:
                         del notesOn[ key ]
 
-                # use the notes that were on before this midi event to construct a fill
-                # for time intervening between that midi event and this one
-                fillEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
-
-                # reset buildingEvent and short-circuit on first run
-                if buildingEvent  ==  None:
-                    buildingEvent  =  { e.pitch: OFF_ON }
-                    continue
+                lastTime     =  time
+                time        +=  e.tick
+                lastTimeIdx  =  timeIdx
+                timeIdx      =  int( float( time ) / eventWidth )
 
                 # if we have moved on to another discretized time, vocab and append
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
-                if lastVDataIdx != vDataIdx:
+                if lastTimeIdx  !=  timeIdx:
                     events.append( buildingEvent.copy( ) )
 
-                    while len( events )  <  vDataIdx:
+                    while len( events )  <  timeIdx:
                         events.append( fillEvent.copy( ) )
 
-                    # e.g: key = ( channel, pitch )
-                    buildingEvent  =  dict( [ ( key[ 1 ], ON_ON ) for key in lastNotesOn ] )
+                    buildingEvent  =  fillEvent.copy( )
 
                 if isOn:
                     if e.pitch not in buildingEvent:
@@ -174,16 +173,15 @@ class MidiKeras:
                     elif buildingEvent[ e.pitch ] == ON_ON:
                         buildingEvent[ e.pitch ] = ON_OFF
 
-
-            # finally
+            # one more time after the loop of MIDI events
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
 
-            #print 'events', events
+            print 'events', events
 
             # break the events up into chunks
-            startIdx = 0
-            makeMoreChunks = True
+            startIdx        =  0
+            makeMoreChunks  =  True
             while makeMoreChunks:
                 diffCount     =  0
                 numDiff       =  15 # arbitrary constant
@@ -195,17 +193,17 @@ class MidiKeras:
                 while diffCount < numDiff  and  len( eList ) < seqLen  and  eIdx < len( events ):
                     # skip initial empty events
                     if len( eList ) == 0  and  events[ eIdx ] == { }:
-                        eIdx += 1
+                        eIdx  +=  1
                         continue
 
                     # count number of times the event changes
                     if len( eList ) == 0  or  eList[ -1 ] != events[ eIdx ]:
-                        diffCount += 1
+                        diffCount  +=  1
 
                     eList.append( events[ eIdx ] )
 
-                    if events[ eIdx ] != { }:
-                        lastHappened = len( eList )
+                    if eList[ -1 ]  !=  { }:
+                        lastHappened  =  len( eList )
 
                     eIdx += 1
 
@@ -219,7 +217,7 @@ class MidiKeras:
                 # TODO use the last event with a pitch - now we only consider the last in the list
                 if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
                     zeroPitch  =  min( eList[ -2 ].keys( ) )
-                    eList  =  [ dict( [ ( p - 0, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+                    eList  =  [ dict( [ ( p - zeroPitch, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
                     for e in eList:
                         if e not in self.vocab:
                             self.vocab.append( e )
@@ -266,7 +264,7 @@ class MidiKeras:
             layer  =  l( layer )
 
         model  =  Model( input = inputs, output = layer )
-        rmsProp  =  RMSprop( lr = 0.001 )
+        rmsProp  =  RMSprop( lr = 0.0001 )
         model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
 
         return model
@@ -359,16 +357,19 @@ class MidiKeras:
 
 
     def midiRip( self, midiFile, visDebug = False ):
+        global ec
         pattern = midi.read_midifile( midiFile )
         offset = 0
 
         tracks = [ ]
-        for track in pattern:
+        for i, track in enumerate( pattern ):
+            print 'track', i
             notes = [ ]
             time = 0
             notesOn = {}
             for e in track:
-                #print e
+                if type(e) == midi.ProgramChangeEvent:
+                    print e
                 time += e.tick
                 if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
                     key = ( e.channel, e.pitch - offset )
@@ -380,6 +381,7 @@ class MidiKeras:
                             't': notesOn[ key ] / float( pattern.resolution ),
                             'd': ( time - notesOn[ key ] ) / float( pattern.resolution ),
                             'n': e.pitch - offset,
+                            'c': e.channel,
                         } )
             tracks.append( notes )
 
@@ -387,38 +389,6 @@ class MidiKeras:
             self.visNotes( [ track for track in tracks if len(track) > 0 ], path.join( THIS_PATH, 'vis_debug', path.basename( midiFile ) ) )
 
         return tracks
-
-    def sliceAndDice( self, notes, visDebug = False ):
-        if len( notes ) == 0:
-            return [ ]
-
-        ret = [ ]
-
-        length = notes[-1]['t'] + notes[-1]['d']
-        t = 0
-        iterNotes = iter( notes )
-
-        while t < length:
-            snippet = [ iterNotes.next( ) ]
-
-            # length in quarter-notes
-            snippetLength = random.randrange( 1, 5 )
-            while snippet[-1]['t'] - snippet[0]['t']  <  snippetLength:
-                try:
-                    snippet.append( iterNotes.next( ) )
-                except StopIteration:
-                    break
-
-            ret.append( snippet )
-
-            t = snippet[-1]['t'] + snippet[-1]['d']
-
-        if visDebug:
-            #self.visNotes( [ snippet for snippet in ret if len(snippet) > 0 ], path.join( THIS_PATH, 'vis_debug', 'snippets' ) )
-            pass
-
-        return ret
-
 
     def notesLimits( self, notes ):
         firstTime = None

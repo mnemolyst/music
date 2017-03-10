@@ -1,5 +1,6 @@
 import midiKeras as mk
 import sys
+from sys import getsizeof as sizeof
 from os import path, listdir
 from os.path import isdir, isfile
 from time import strftime
@@ -15,11 +16,12 @@ from theano import function
 #from keras.utils.visualize_util import plot
 from keras.optimizers import RMSprop
 import PIL
-from random import random, randint, shuffle
+from random import random, randint, shuffle, seed
 import math
 import json
 from pymongo import MongoClient
 import re
+from Tkinter import *
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
@@ -62,7 +64,7 @@ class Trainer:
             batch = pred[batchIdx : batchIdx + self.batchShape[0]]
             es = [midiKeras.vocab[x] for x in batch]
             for j, e in enumerate(es):
-                if e != None:
+                if e is not None:
                     for n in e:
                         p = img.getpixel((i, 129 * j + n))
                         img.putpixel( (i, 129 * j + n), (255, p[1] / 2, p[2] / 2) )
@@ -100,7 +102,7 @@ class Trainer:
             #################
             # image weights #
             #################
-            #if idx != None:
+            #if idx is not None:
             #    for l in self.model.layers:
             #        weights = l.get_weights()
             #        for j, m in enumerate(weights):
@@ -179,6 +181,72 @@ def doIt( a, b ):
         trainAndTest(1, fTrainData, fTrainLabels)
         dumpEmbeddingWeights( 'test' + str(i) )
 
+class GUI:
+    def __init__( self, master, inputFiles ):
+        self.master       =  master
+        self.inputFiles   =  inputFiles
+        self.curSongIdx   =  0
+        self.curTrackIdx  =  0
+
+    def changeSong( self, e ):
+        self.curSongIdx  =  self.songLB.curselection( )[ 0 ]
+        print self.inputFiles[ self.curSongIdx ]
+        tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
+        self.trackLB.delete( 0, END )
+        for i, track in enumerate( tracks ):
+            self.trackLB.insert( END, 'Track ' + str( i ) )
+
+    def changeTrack( self, e ):
+        tracks            =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
+        self.curTrackIdx  =  self.trackLB.curselection( )[ 0 ]
+
+        self.canvas.delete( ALL )
+        for note in tracks[ self.curTrackIdx ]:
+            x1  =       3 * ( note[ 't' ] ) + 20
+            x2  =  x1 + 3 * ( note[ 'd' ] )
+            y   =  0.5 * ( 128 - note[ 'n' ] + note[ 'c' ] * 128 )
+            self.canvas.create_rectangle( ( x1, y, x2, y ) )
+
+        for c in range( 16 ):
+            self.canvas.create_text( 0, 0.5 * ( 64 + c * 128 ), anchor = W, text = str( c + 1 ) )
+
+    def start( self ):
+        self.leftFrame  =  Frame( self.master )
+
+        self.songFrame  =  Frame( self.leftFrame )
+        self.songSB  =  Scrollbar( self.songFrame )
+        self.songSB.pack( side = RIGHT, fill = Y )
+        self.songLB  =  Listbox( self.songFrame, yscrollcommand = self.songSB.set )
+        for i, f in enumerate( self.inputFiles ):
+            self.songLB.insert( END, str( f ) )
+        self.songLB.pack( side = LEFT, fill = BOTH )
+        self.songLB.bind( "<Double-Button-1>", self.changeSong )
+        self.songSB.config( command = self.songLB.yview )
+        self.songFrame.pack( side = TOP )
+
+        self.trackFrame  =  Frame( self.leftFrame )
+        self.trackSB  =  Scrollbar( self.trackFrame )
+        self.trackSB.pack( side = RIGHT, fill = Y )
+        self.trackLB  =  Listbox( self.trackFrame, yscrollcommand = self.trackSB.set )
+        self.trackLB.pack( side = LEFT, fill = BOTH )
+        self.trackLB.bind( "<Double-Button-1>", self.changeTrack )
+        self.trackSB.config( command = self.trackLB.yview )
+        self.trackFrame.pack( side = TOP )
+
+        self.channelLB  =  Listbox( self.leftFrame, selectmode = MULTIPLE )
+        for c in range( 16 ):
+            self.channelLB.insert( END, str( c + 1 ) )
+        self.channelLB.pack( side = TOP )
+
+        self.leftFrame.pack( side = LEFT )
+
+        self.canvasSB  =  Scrollbar( self.master )
+        self.canvas  =  Canvas( self.master, width = 1200, height = 1200, background = 'white', yscrollcommand = self.canvasSB.set )
+        self.canvasSB.config( command = self.canvas.yview )
+        self.canvasSB.pack( side = RIGHT, fill = Y )
+        self.canvas.pack( side = LEFT )
+
+        self.master.mainloop( )
 
 if __name__ == '__main__':
 
@@ -188,7 +256,7 @@ if __name__ == '__main__':
     doRewrite = False
     visDebug = False
     isTrainFile = True
-    trainFiles = [ ]
+    inputFiles = [ ]
     testFiles  = [ ]
     testFrag = None
     trainDirs  = [ ]
@@ -238,77 +306,138 @@ if __name__ == '__main__':
             i += 1
         elif path.exists( sys.argv[i] ):
             if isTrainFile:
-                trainFiles.append( sys.argv[i] )
+                inputFiles.append( sys.argv[i] )
             elif isTrainDir and isdir( sys.argv[i] ):
                 trainDirs.append( sys.argv[i] )
             else:
                 testFiles.append( sys.argv[i] )
         i += 1
 
-    # recurse through a directory and prepare MIDI files inside for training
+    # recurse through a directory and gather MIDI files
     for d in trainDirs:
-        trainFiles.extend( scrapeDir( d ) )
+        inputFiles.extend( scrapeDir( d ) )
+
+    # sift through files
+    master  =  Tk( )
+    gui     =  GUI( master, inputFiles )
+    gui.start( )
+    quit( )
+
+    #master.mainloop( )
+    #quit( )
 
     # initialize midiKeras.vocab
-    print 'initializing vocab'
-    for i, f in enumerate( trainFiles ):
+    # print 'initializing vocab'
+    for i, f in enumerate( inputFiles ):
         try:
-            print str(i) + ' / ' + str(len(trainFiles)) + ' ( ' + f + ' )'
+            print str( i + 1 ) + ' / ' + str( len(inputFiles) ) + ' ( ' + f + ' )'
             midiKeras.oneStep( f, returnTrainingData = False )
         except Exception, e:
             continue
 
-    print 'vocab:'
-    for i, v in enumerate( midiKeras.vocab ):
-        print i, v
+    #print 'vocab:'
+    #for i, v in enumerate( midiKeras.vocab ):
+    #    print i, v
 
     batchSize    =  1
     trainChunk   =  [ ]
     inputLength  =  16 * 3
     layers       =  midiKeras.genLayers( inputLength )
     model        =  midiKeras.genFuncModel( layers )
+    memMax       =  25 * 1024 * 1024 # 25 megabytes
+    thisX        =  None
+    thisY        =  None
 
+    iter = 0
     while True:
-        for i in range( 0, len( trainFiles ), batchSize ):
-            ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
-            for j in range( batchSize ):
-                if i + j >= len( trainFiles ):
-                    break
-                f = trainFiles[ i + j ]
-                print str( i + j + 1 ) + ' / ' + str( len(trainFiles) ) + ' ( ' + f + ' )'
+        iter += 1
+        print 'iter', iter
+
+        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+        shuffle( inputFiles )
+        for i, f in enumerate( inputFiles ):
+            if thisX is None and thisY is None:
                 ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
-                x  =  np.vstack( ( x, thisX ) )
-                y  =  np.vstack( ( y, thisY ) )
-            keepGoing  =  True
-            streak     =  0
-            iterCnt    =  0
-            while keepGoing:
-                metrics  =  model.train_on_batch( x, y )
-                iterCnt += 1
-                loss     =  float( metrics[ 0 ] )
-                acc      =  float( metrics[ 1 ] )
-                print 'iterCnt: ' + str( iterCnt ) + '\tloss: ' + str( loss ) + '\tacc: ' + str( acc )
-                #if acc > 0.5:
-                #    streak += 1
-                #    if streak == 5:
-                #        keepGoing = False
-                #else:
-                #    streak = 0
-                keepGoing = False
+
+            thisMem  =  sizeof( thisX ) + sizeof( thisY ) + sizeof( x ) + sizeof( y )
+
+            if thisMem  <  memMax:
+                idx  =  range( len(thisX) )
+                seed( f )
+                shuffle( idx )
+                for j in idx:
+                    x  =  np.vstack( ( x, thisX[ j ] ) )
+                    y  =  np.vstack( ( y, thisY[ j ] ) )
+                thisX = thisY = None
+
+            if thisMem  >  memMax:
+
+                trainX = x[ : int( len(x) * 0.9 ) ]
+                trainY = y[ : int( len(y) * 0.9 ) ]
+                testX  = x[ int( len(x) * 0.9 ) : ]
+                testY  = y[ int( len(y) * 0.9 ) : ]
+
+                model.fit( trainX, trainY, validation_data = ( testX, testY ), nb_epoch = 10, shuffle = True )
+
+                ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+
+            if i == len(inputFiles) - 1:
+
+                trainX  =  x[ : int( len(x) * 0.9 ) ]
+                trainY  =  y[ : int( len(y) * 0.9 ) ]
+                testX   =  x[ int( len(x) * 0.9 ) : ]
+                testY   =  y[ int( len(y) * 0.9 ) : ]
+
+                #earlyStopping    =  EarlyStopping( monitor = 'val_loss', patience = 20 )
+                #modelCheckpoint  =  ModelCheckpoint( pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True )
+
+                model.fit( trainX, trainY, validation_data = ( testX, testY ), nb_epoch = 10000, shuffle = True )
+                quit( )
 
     quit( )
 
-    #epochCnt  =  0
+    while True:
+        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+        keepGoing  =  True
+        while keepGoing:
+            for f in inputFiles:
+                if thisX is None and thisY is None:
+                    ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
+                    seed( f )
+
+                if sizeof( thisX ) + sizeof( thisY ) + sizeof( x ) + sizeof( y )  <  memMax:
+                    x  =  np.vstack( ( x, thisX ) )
+                    y  =  np.vstack( ( y, thisY ) )
+                    thisX = thisY = None
+                else:
+                    keepGoing = False
+                    break
+        model.fit( x, y, validation_split = 0.1 )
+
+        #for i, f in enumerate( inputFiles ):
+        #    # print str( i + 1 ) + ' / ' + str( len(inputFiles) ) + ' ( ' + f + ' )'
+        #    ( x, y )  =  midiKeras.oneStep( f, returnTrainingData = True )
+        #    iterCnt    =  0
+        #    while iterCnt < 10:
+        #        iterCnt += 1
+        #        metrics  =  model.train_on_batch( x, y )
+        #        loss     =  float( metrics[ 0 ] )
+        #        acc      =  float( metrics[ 1 ] )
+        #        print 'iterCnt: ' + str( iterCnt ) + '\tloss: ' + str( loss ) + '\tacc: ' + str( acc )
+
+    quit( )
+
+    epochCnt  =  0
     # loop for number of training epochs
-        # loop through every training file
-            # fill trainChunk, then testChunk, until both are full
-            # when full, train network once, test it, collect stats, empty chunks
+    #     loop through every training file
+    #         fill trainChunk, then testChunk, until both are full
+    #         when full, train network once, test it, collect stats, empty chunks
     while epochCnt < maxEpochs:
         print 'epochCnt', epochCnt
-        for i, f in enumerate( trainFiles ):
-            print f, '( ' + str( i + 1 ) + '/' + str( len( trainFiles ) ) + ' )'
+        for i, f in enumerate( inputFiles ):
+            print f, '( ' + str( i + 1 ) + '/' + str( len( inputFiles ) ) + ' )'
             try:
-                if fileData == None:
+                if fileData is None:
                     fileData = midiKeras.oneStep( f, returnTrainingData = True )
             except Exception, e:
                 print 'failed:', f
@@ -408,7 +537,7 @@ if __name__ == '__main__':
         batchShape = ( len( trainData ), 1 )
 
         # if we didn't load a model, make a new one
-        if model == None:
+        if model is None:
             model = midiKeras.genFuncModel( batchShape )
 
         # train the model
@@ -446,12 +575,12 @@ if __name__ == '__main__':
         #    lastLoss = loss
         #    loss = train(newModel)
         #    model = newModel
-        #    if lastLoss != None and lastLoss < loss:
+        #    if lastLoss is not None and lastLoss < loss:
         #        break
 
     elif False and len(testData):
         batchShape = (len(testData), 1)
-        if model == None:
+        if model is None:
             model = midiKeras.genFuncModel(batchShape)
             with open(pathPrefix + '-struct.json', 'w') as f:
                 f.write(model.to_json())
