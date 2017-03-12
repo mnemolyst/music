@@ -365,7 +365,7 @@ class MidiKeras:
             time = 0
             notesOn = {}
             for e in track:
-                time += e.tick
+                time  +=  e.tick
                 if isinstance( e, midi.NoteOnEvent ) and e.velocity > 0:
                     key = ( e.channel, e.pitch - offset )
                     notesOn[ key ] = time

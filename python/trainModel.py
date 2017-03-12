@@ -1,7 +1,7 @@
 import midiKeras as mk
 import sys
 from sys import getsizeof as sizeof
-from os import path, listdir
+from os import path, listdir, system
 from os.path import isdir, isfile
 from time import strftime
 import pickle
@@ -23,6 +23,7 @@ from pymongo import MongoClient
 import re
 from Tkinter import *
 import midi
+from subprocess import Popen
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
@@ -189,6 +190,7 @@ class GUI:
         self.curSongIdx   =  0
         self.curTrackIdx  =  0
         self.channelSets  =  [ ]
+        self.playSP       =  None
 
     def changeSong( self, e ):
         self.curSongIdx  =  self.songLB.curselection( )[ 0 ]
@@ -197,11 +199,16 @@ class GUI:
         for i, track in enumerate( tracks ):
             self.trackLB.insert( END, 'Track ' + str( i ) )
 
+        self.curTrackIdx  =  0
+        self.changeTrack( None )
+
         self.resetChannelSets( )
 
-    def changeTrack( self, e ):
-        tracks            =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
-        self.curTrackIdx  =  self.trackLB.curselection( )[ 0 ]
+    def changeTrack( self, e = None ):
+        tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
+
+        if e:
+            self.curTrackIdx  =  self.trackLB.curselection( )[ 0 ]
 
         self.canvas.delete( ALL )
         for note in tracks[ self.curTrackIdx ]:
@@ -223,36 +230,60 @@ class GUI:
         self.channelSets  =  [ ]
         self.channelSetText.config( text = str( self.channelSets ) )
 
-    def save( self ):
-        if self.channelSets  ==  [ ]:
-            print 'Empty channel set!'
-            return
-
+    def doSave( self, fileName ):
         pattern  =  midi.read_midifile( self.inputFiles[ self.curSongIdx ] )
         savedSets  =  midi.Pattern( )
         savedSets.resolution  =  pattern.resolution
 
         for channelSet in self.channelSets:
             for track in pattern:
-                thisSet  =  midi.Track( )
+                lostTime  =  0
+                thisSet   =  midi.Track( )
                 for event in track:
                     if not hasattr( event, 'channel' )  or  event.channel in channelSet:
+                        if lostTime  >  0:
+                            event.tick  +=  lostTime
+                            lostTime     =  0
                         thisSet.append( event )
+                    else:
+                        lostTime  +=  event.tick
                 savedSets.append( thisSet )
 
-        outPath  =  path.join( THIS_PATH, 'midi', 'train', 'filtered', path.basename( self.inputFiles[ self.curSongIdx ] ) )
-        f  =  open( outPath, 'w')
+        f  =  open( fileName, 'w')
         midi.write_midifile( f, savedSets )
         f.close( )
 
-        f  =  open( path.join( THIS_PATH, 'midi', 'program.txt' ), 'a' )
-        line  =  self.inputFiles[ self.curSongIdx ] + '\t' + str( self.channelSets ) + '\n'
-        f.write( line )
-        f.close( )
+    def save( self ):
+        if self.channelSets  ==  [ ]:
+            print 'Empty channel set!'
+            return
+
+        outPath  =  path.join( THIS_PATH, 'midi', 'train', 'filtered', path.basename( self.inputFiles[ self.curSongIdx ] ) )
+        self.doSave( outPath )
+
+        #f  =  open( path.join( THIS_PATH, 'midi', 'program.txt' ), 'a' )
+        #line  =  self.inputFiles[ self.curSongIdx ] + '\t' + str( self.channelSets ) + '\n'
+        #f.write( line )
+        #f.close( )
 
         self.resetChannelSets( )
 
         print 'Saved!'
+
+    def play( self ):
+        if self.channelSets  ==  [ ]:
+            print 'Empty channel set!'
+            return
+
+        outPath  =  path.join( '/tmp', path.basename( self.inputFiles[ self.curSongIdx ] ) )
+        self.doSave( outPath )
+
+        self.playSP  =  Popen( [ 'timidity', outPath ] )
+
+    def stop( self ):
+        if self.playSP:
+            self.playSP.terminate( )
+            self.playSP  =  None
 
     def start( self ):
         self.leftFrame  =  Frame( self.master )
@@ -277,7 +308,7 @@ class GUI:
         self.trackSB.config( command = self.trackLB.yview )
         self.trackFrame.pack( side = TOP )
 
-        self.channelLB  =  Listbox( self.leftFrame, selectmode = MULTIPLE )
+        self.channelLB  =  Listbox( self.leftFrame, selectmode = EXTENDED )
         for c in range( 16 ):
             self.channelLB.insert( END, str( c ) )
         self.channelLB.pack( side = TOP )
@@ -290,6 +321,12 @@ class GUI:
 
         self.channelSetText  =  Label( self.leftFrame, text = '[]' )
         self.channelSetText.pack( side = TOP )
+
+        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Play', command = self.play )
+        self.addChannelSetBtn.pack( side = TOP )
+
+        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Stop', command = self.stop )
+        self.addChannelSetBtn.pack( side = TOP )
 
         self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Save', command = self.save )
         self.addChannelSetBtn.pack( side = TOP )
