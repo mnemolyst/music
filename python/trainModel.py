@@ -184,13 +184,17 @@ def doIt( a, b ):
         dumpEmbeddingWeights( 'test' + str(i) )
 
 class GUI:
+    curSongIdx     =  0
+    curTrackIdx    =  ( )
+    channelSets    =  [ ]
+    playSP         =  None
+    ppc            =  64
+    channelRects   =  { }
+    channelBounds  =  { }
+
     def __init__( self, master, inputFiles ):
         self.master       =  master
         self.inputFiles   =  inputFiles
-        self.curSongIdx   =  0
-        self.curTrackIdx  =  0
-        self.channelSets  =  [ ]
-        self.playSP       =  None
 
     def changeSong( self, e ):
         self.curSongIdx  =  self.songLB.curselection( )[ 0 ]
@@ -199,28 +203,30 @@ class GUI:
         for i, track in enumerate( tracks ):
             self.trackLB.insert( END, 'Track ' + str( i ) )
 
-        self.curTrackIdx  =  0
+        self.curTrackIdx  =  ( )
         self.changeTrack( None )
 
         self.resetChannelSets( )
+
+        self.canvas.config( scrollregion = self.canvas.bbox( ALL ) )
 
     def changeTrack( self, e = None ):
         tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
 
         if e:
-            self.curTrackIdx  =  self.trackLB.curselection( )[ 0 ]
+            self.curTrackIdx  =  self.trackLB.curselection( )
 
         self.canvas.delete( ALL )
-        for note in tracks[ self.curTrackIdx ]:
-            x1  =       3 * ( note[ 't' ] ) + 20
-            x2  =  x1 + 3 * ( note[ 'd' ] )
-            y   =  0.5 * ( 128 - note[ 'n' ] + note[ 'c' ] * 128 )
-            self.canvas.create_rectangle( ( x1, y, x2, y ) )
+
+        for track in tracks:
+            for note in track:
+                x1  =       3 * ( note[ 't' ] ) + 20
+                x2  =  x1 + 3 * ( note[ 'd' ] )
+                y   =  self.ppc - note[ 'n' ] * self.ppc / 128 + note[ 'c' ] * self.ppc
+                self.canvas.create_rectangle( ( x1, y, x2, y ) )
 
         for c in range( 16 ):
-            self.canvas.create_text( 0, 0.5 * ( 64 + c * 128 ), anchor = W, text = str( c ) )
-
-        self.resetChannelSets( )
+            self.canvas.create_text( 0, self.ppc / 2 + c * self.ppc, anchor = W, text = str( c ) )
 
     def addChannelSet( self ):
         self.channelSets.append( list( self.channelLB.curselection( ) ) )
@@ -230,27 +236,52 @@ class GUI:
         self.channelSets  =  [ ]
         self.channelSetText.config( text = str( self.channelSets ) )
 
-    def doSave( self, fileName ):
+    def play( self ):
+        if self.channelSets  ==  [ ]:
+            print 'Empty channel set!'
+            return
+
+        outPath  =  path.join( '/tmp', path.basename( self.inputFiles[ self.curSongIdx ] ) )
+        self._save( outPath )
+
+        self.playSP  =  Popen( [ 'timidity', outPath ] )
+
+    def stop( self ):
+        if self.playSP:
+            self.playSP.terminate( )
+            self.playSP  =  None
+
+    def _save( self, fileName ):
         pattern  =  midi.read_midifile( self.inputFiles[ self.curSongIdx ] )
-        savedSets  =  midi.Pattern( )
-        savedSets.resolution  =  pattern.resolution
+        output  =  midi.Pattern( )
+        output.resolution  =  pattern.resolution
 
         for channelSet in self.channelSets:
             for track in pattern:
-                lostTime  =  0
-                thisSet   =  midi.Track( )
+                time       =  0
+                lostTime   =  0
+                thisTrack  =  midi.Track( )
                 for event in track:
-                    if not hasattr( event, 'channel' )  or  event.channel in channelSet:
+                    if not hasattr( event, 'channel' )  or \
+                            ( event.channel in channelSet  and \
+                                ( event.channel not in self.channelBounds  or \
+                                    (
+                                        ( time + lostTime + event.tick ) / pattern.resolution  >  self.channelBounds[ event.channel ][ 0 ]  and \
+                                        ( time + lostTime + event.tick ) / pattern.resolution  <  self.channelBounds[ event.channel ][ 1 ] ) ) ) :
+                        #if hasattr(event,'channel') and event.channel != 9:
+                        #    print event
                         if lostTime  >  0:
                             event.tick  +=  lostTime
                             lostTime     =  0
-                        thisSet.append( event )
+                        thisTrack.append( event )
+                        time  +=  event.tick
                     else:
                         lostTime  +=  event.tick
-                savedSets.append( thisSet )
+
+                output.append( thisTrack )
 
         f  =  open( fileName, 'w')
-        midi.write_midifile( f, savedSets )
+        midi.write_midifile( f, output )
         f.close( )
 
     def save( self ):
@@ -259,31 +290,63 @@ class GUI:
             return
 
         outPath  =  path.join( THIS_PATH, 'midi', 'train', 'filtered', path.basename( self.inputFiles[ self.curSongIdx ] ) )
-        self.doSave( outPath )
+        self._save( outPath )
 
         #f  =  open( path.join( THIS_PATH, 'midi', 'program.txt' ), 'a' )
         #line  =  self.inputFiles[ self.curSongIdx ] + '\t' + str( self.channelSets ) + '\n'
         #f.write( line )
         #f.close( )
 
-        self.resetChannelSets( )
-
         print 'Saved!'
 
-    def play( self ):
-        if self.channelSets  ==  [ ]:
-            print 'Empty channel set!'
-            return
+    def canvasClick( self, e ):
+        #props = ['char', 'delta', 'height', 'keycode', 'keysym', 'keysym_num', 'num', 'send_event', 'serial', 'state', 'time', 'type', 'widget', 'width', 'x', 'x_root', 'y', 'y_root']
+        canvas  =  e.widget
+        x       =  canvas.canvasx( e.x )
+        y       =  canvas.canvasy( e.y )
 
-        outPath  =  path.join( '/tmp', path.basename( self.inputFiles[ self.curSongIdx ] ) )
-        self.doSave( outPath )
+        self.dragStartTime  =  int( ( x - 20 ) / 3 )
+        self.dragCIdx       =  int( y / self.ppc )
 
-        self.playSP  =  Popen( [ 'timidity', outPath ] )
+        if self.dragCIdx in self.channelRects and \
+                self.channelRects[ self.dragCIdx ] is not None:
+           canvas.delete( self.channelRects[ self.dragCIdx ] )
+           self.channelRects[ self.dragCIdx ]  =  None
 
-    def stop( self ):
-        if self.playSP:
-            self.playSP.terminate( )
-            self.playSP  =  None
+        self.dragWindow  =  self.channelRects[ self.dragCIdx ]  = \
+                canvas.create_rectangle( ( x, self.dragCIdx * self.ppc, x, ( self.dragCIdx + 1 ) * self.ppc ) )
+
+    def canvasDrag( self, e ):
+        canvas  =  e.widget
+        x       =  canvas.canvasx(e.x)
+        y       =  canvas.canvasy(e.y)
+
+        self.dragTime  =  int( ( x - 20 ) / 3 )
+
+        curC  =  canvas.coords( self.dragWindow )
+        canvas.coords( self.dragWindow, ( curC[0], curC[1], x, curC[3] ) )
+
+    def canvasClack( self, e ):
+        canvas  =  e.widget
+        x       =  canvas.canvasx(e.x)
+        y       =  canvas.canvasy(e.y)
+
+        self.dragTime  =  int( ( x - 20 ) / 3 )
+
+        canvas.itemconfig( self.dragWindow, outline = 'red' )
+
+        self.channelBounds[ self.dragCIdx ]  =  ( self.dragStartTime, self.dragTime )
+
+    def canvasKey( self, e ):
+        print e.keysym
+        if e.keysym == 'Up':
+            self.canvas.yview_scroll( -1, 'units' )
+        elif e.keysym == 'Down':
+            self.canvas.yview_scroll( 1, 'units' )
+        elif e.keysym == 'Left':
+            self.canvas.xview_scroll( -1, 'units' )
+        elif e.keysym == 'Right':
+            self.canvas.xview_scroll( 1, 'units' )
 
     def start( self ):
         self.leftFrame  =  Frame( self.master )
@@ -302,9 +365,9 @@ class GUI:
         self.trackFrame  =  Frame( self.leftFrame )
         self.trackSB  =  Scrollbar( self.trackFrame )
         self.trackSB.pack( side = RIGHT, fill = Y )
-        self.trackLB  =  Listbox( self.trackFrame, yscrollcommand = self.trackSB.set )
+        self.trackLB  =  Listbox( self.trackFrame, yscrollcommand = self.trackSB.set, selectmode = EXTENDED )
         self.trackLB.pack( side = LEFT, fill = BOTH )
-        self.trackLB.bind( "<Double-Button-1>", self.changeTrack )
+        self.trackLB.bind( "<Button-1>", self.changeTrack )
         self.trackSB.config( command = self.trackLB.yview )
         self.trackFrame.pack( side = TOP )
 
@@ -333,11 +396,13 @@ class GUI:
 
         self.leftFrame.pack( side = LEFT )
 
-        self.canvasSB  =  Scrollbar( self.master )
-        self.canvas  =  Canvas( self.master, width = 1200, height = 1200, background = 'white', yscrollcommand = self.canvasSB.set )
-        self.canvasSB.config( command = self.canvas.yview )
-        self.canvasSB.pack( side = RIGHT, fill = Y )
+        self.canvas  =  Canvas( self.master, width = 1200, height = 1200, background = 'white' )
         self.canvas.pack( side = LEFT )
+        self.canvas.bind( "<Button-1>",  self.canvasClick )
+        self.canvas.bind( "<B1-Motion>", self.canvasDrag )
+        self.canvas.bind( "<ButtonRelease-1>", self.canvasClack )
+        self.master.bind( "<Key>",       self.canvasKey )
+        #self.master.bind( 'a', self.canvasKey )
 
         self.master.mainloop( )
 
