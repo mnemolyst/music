@@ -113,9 +113,10 @@ class MidiKeras:
             timeIdx        =  None
             time           =  0
             notesOn        =  { }
-            buildingEvent  =  None
+            buildingEvent  =  { }
 
             for e in track:
+                print e
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
                 elif isinstance( e, midi.NoteOnEvent ):
@@ -123,10 +124,9 @@ class MidiKeras:
                 else:
                     continue
 
-                # reset buildingEvent and short-circuit on first run
-                if buildingEvent  ==  None:
+                # init buildingEvent
+                if buildingEvent is None:
                     buildingEvent  =  { e.pitch: OFF_ON }
-                    continue
 
                 lastNotesOn   =  notesOn.copy( )
 
@@ -150,7 +150,7 @@ class MidiKeras:
                 # if we have moved on to another discretized time, vocab and append
                 # the last one, fill intervening time, and start building a new
                 # discretized vocab thing
-                if lastTimeIdx  !=  timeIdx:
+                if lastTimeIdx != timeIdx  and  lastTimeIdx is not None:
                     events.append( buildingEvent.copy( ) )
 
                     while len( events )  <  timeIdx:
@@ -176,6 +176,8 @@ class MidiKeras:
             # one more time after the loop of MIDI events
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
+
+            print 'events', events
 
             # break the events up into chunks
             startIdx        =  0
@@ -235,75 +237,81 @@ class MidiKeras:
 
     def vocab2Midi( self, vData, noteShift = 64 ):
         pattern  =  midi.Pattern( )
-        track    =  midi.Track( )
-        tpe      =  int( pattern.resolution / 4 )
+
+        track  =  midi.Track( )
+        track.append( midi.SetTempoEvent( tick = 0, data = [ 7, 161, 32 ] ) )
+        track.append( midi.TimeSignatureEvent( tick = 0, data = [ 4, 2, 24, 8 ] ) )
+        track.append( midi.EndOfTrackEvent( tick = 0 ) )
+        pattern.append( track )
+
+        track  =  midi.Track( )
+        track.append( midi.ProgramChangeEvent( tick = 0, data = [ 0 ] ) )
+
+        tpe       =  int( pattern.resolution / 4 )
+        print 'tpe', tpe
+        lostTime  =  0
+
         for vIdx in vData:
             e  =  self.vocab[ vIdx ]
 
-            if e is None:
+            print 'e', e
+
+            if e is None  or  e == { }:
+                lostTime  +=  tpe
                 continue
 
-            bgngOn  =  [ ]
-            midOn   =  [ ]
-            midPOn  =  [ ]
-            bgngOff  =  [ ]
-            midOff   =  [ ]
-            midPOff  =  [ ]
+            immediately  =  [ ]
+            justAfter    =  [ ]
 
             for note in e:
                 w      =  e[ note ]
                 note  +=  noteShift
                 if w == OFF_ON:
-                    bgngOn.append( note )
+                    immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
+                elif w == ON_ON:
+                    immediately.append( None )
                 elif w == ON_OFF:
-                    bgngOff.append( note )
+                    immediately.append( midi.NoteOffEvent( pitch = note ) )
                 elif w == ON_OFF_ON:
-                    midOff.append( note )
-                    midPOn.append( note )
+                    immediately.append( midi.NoteOffEvent( pitch = note ) )
+                    justAfter.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
                 elif w == OFF_ON_OFF:
-                    midOn.append( note )
-                    midPOff.append( note )
+                    immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
+                    justAfter.append( midi.NoteOffEvent( pitch = note ) )
+                else:
+                    raise Exception( "Unknown AI-time \"event\" found: " + str( w ) )
 
-            for i, x in enumerate( bgngOn ):
+
+            for i, event in enumerate( immediately ):
+                if event is None:
+                    lostTime += tpe
+                    continue
                 if i == 0:
-                    event  =  midi.NoteOnEvent( tick = tpe, pitch = x )
+                    event.tick  =  tpe + lostTime
+                    lostTime  =  0
                 else:
-                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
+                    event.tick  =  0
                 track.append( event )
-            for i, x in enumerate( midOn ):
+
+            for i, event in enumerate( justAfter ):
+                if event is None:
+                    lostTime += tpe
+                    continue
                 if i == 0:
-                    event  =  midi.NoteOnEvent( tick = tpe / 2., pitch = x )
+                    event.tick  =  tpe + 1 + lostTime
+                    lostTime  =  0
                 else:
-                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
+                    event.tick  =  0
                 track.append( event )
-            for i, x in enumerate( midPOn ):
-                if i == 0:
-                    event  =  midi.NoteOnEvent( tick = tpe / 2. + 1, pitch = x )
-                else:
-                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
-                track.append( event )
-            for i, x in enumerate( bgngOff ):
-                if i == 0:
-                    event  =  midi.NoteOffEvent( tick = tpe, pitch = x )
-                else:
-                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
-                track.append( event )
-            for i, x in enumerate( midOff ):
-                if i == 0:
-                    event  =  midi.NoteOffEvent( tick = tpe / 2., pitch = x )
-                else:
-                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
-                track.append( event )
-            for i, x in enumerate( midPOff ):
-                if i == 0:
-                    event  =  midi.NoteOffEvent( tick = tpe / 2. + 1, pitch = x )
-                else:
-                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
-                track.append( event )
+
+
+        track.append( midi.EndOfTrackEvent( tick = 0 ) )
 
         pattern.append( track )
         return pattern
 
+    #############
+    # TODO make custom Keras layer to put embedding mid-layerstack. Currently only allowed to use as first layer.
     def genModel( self, inputLength ):
         model = Sequential( )
         model.add( Embedding( len( self.vocab ), 25, mask_zero = True, input_length = inputLength, dropout = 0.5 ) )

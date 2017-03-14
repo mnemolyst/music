@@ -469,6 +469,15 @@ if __name__ == '__main__':
                 trainDirs.append( sys.argv[i] )
             else:
                 testFiles.append( sys.argv[i] )
+        elif sys.argv[i] == 'dump':
+            p = midi.read_midifile( inputFiles[ -1 ] )
+            print 'format', p.format
+            for t in p:
+                print 'track'
+                for e in t:
+                    print e
+            quit( )
+
         i += 1
 
     # recurse through a directory and gather MIDI files
@@ -480,13 +489,6 @@ if __name__ == '__main__':
     #gui     =  GUI( master, inputFiles )
     #gui.start( )
     #quit( )
-
-    p = midi.read_midifile( inputFiles[0] )
-    for t in p:
-        print 'track'
-        for e in t:
-            print e
-    quit( )
 
     # initialize midiKeras.vocab
     # print 'initializing vocab'
@@ -521,7 +523,7 @@ if __name__ == '__main__':
             if thisX is None and thisY is None:
                 ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
 
-            midiData  =  midiKeras.vocab2Midi( [ int( x ) for x in thisX[ 0 ] ] )
+            midiData  =  midiKeras.vocab2Midi( [ int( x ) for x in thisX[ 1 ] ] )
             f         =  open( 'midi/testout.mid', 'w' )
             midi.write_midifile( f, midiData )
             f.close( )
