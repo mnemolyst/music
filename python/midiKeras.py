@@ -224,14 +224,85 @@ class MidiKeras:
 
                     if returnTrainingData:
                         thisX  =  np.array( vList[ :-1 ] ).reshape(( 1, -1 ))
-                        retX   =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len(vList) + 1)), 'constant' ) ) )
-                        retY   =  np.vstack( ( retY, to_categorical( vList[ -1: ], len(self.vocab) ) ) )
+                        retX   =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len( vList ) + 1)), 'constant' ) ) )
+                        retY   =  np.vstack( ( retY, to_categorical( vList[ -1: ], len( self.vocab ) ) ) )
 
         if returnTrainingData:
             return ( retX, retY )
         else:
             return None
 
+
+    def vocab2Midi( self, vData, noteShift = 64 ):
+        pattern  =  midi.Pattern( )
+        track    =  midi.Track( )
+        tpe      =  int( pattern.resolution / 4 )
+        for vIdx in vData:
+            e  =  self.vocab[ vIdx ]
+
+            if e is None:
+                continue
+
+            bgngOn  =  [ ]
+            midOn   =  [ ]
+            midPOn  =  [ ]
+            bgngOff  =  [ ]
+            midOff   =  [ ]
+            midPOff  =  [ ]
+
+            for note in e:
+                w      =  e[ note ]
+                note  +=  noteShift
+                if w == OFF_ON:
+                    bgngOn.append( note )
+                elif w == ON_OFF:
+                    bgngOff.append( note )
+                elif w == ON_OFF_ON:
+                    midOff.append( note )
+                    midPOn.append( note )
+                elif w == OFF_ON_OFF:
+                    midOn.append( note )
+                    midPOff.append( note )
+
+            for i, x in enumerate( bgngOn ):
+                if i == 0:
+                    event  =  midi.NoteOnEvent( tick = tpe, pitch = x )
+                else:
+                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
+                track.append( event )
+            for i, x in enumerate( midOn ):
+                if i == 0:
+                    event  =  midi.NoteOnEvent( tick = tpe / 2., pitch = x )
+                else:
+                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
+                track.append( event )
+            for i, x in enumerate( midPOn ):
+                if i == 0:
+                    event  =  midi.NoteOnEvent( tick = tpe / 2. + 1, pitch = x )
+                else:
+                    event  =  midi.NoteOnEvent( tick = 0, pitch = x )
+                track.append( event )
+            for i, x in enumerate( bgngOff ):
+                if i == 0:
+                    event  =  midi.NoteOffEvent( tick = tpe, pitch = x )
+                else:
+                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
+                track.append( event )
+            for i, x in enumerate( midOff ):
+                if i == 0:
+                    event  =  midi.NoteOffEvent( tick = tpe / 2., pitch = x )
+                else:
+                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
+                track.append( event )
+            for i, x in enumerate( midPOff ):
+                if i == 0:
+                    event  =  midi.NoteOffEvent( tick = tpe / 2. + 1, pitch = x )
+                else:
+                    event  =  midi.NoteOffEvent( tick = 0, pitch = x )
+                track.append( event )
+
+        pattern.append( track )
+        return pattern
 
     def genModel( self, inputLength ):
         model = Sequential( )

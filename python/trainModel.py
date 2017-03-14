@@ -476,13 +476,17 @@ if __name__ == '__main__':
         inputFiles.extend( scrapeDir( d ) )
 
     # sift through files
-    master  =  Tk( )
-    gui     =  GUI( master, inputFiles )
-    gui.start( )
-    quit( )
-
-    #master.mainloop( )
+    #master  =  Tk( )
+    #gui     =  GUI( master, inputFiles )
+    #gui.start( )
     #quit( )
+
+    p = midi.read_midifile( inputFiles[0] )
+    for t in p:
+        print 'track'
+        for e in t:
+            print e
+    quit( )
 
     # initialize midiKeras.vocab
     # print 'initializing vocab'
@@ -516,6 +520,12 @@ if __name__ == '__main__':
         for i, f in enumerate( inputFiles ):
             if thisX is None and thisY is None:
                 ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
+
+            midiData  =  midiKeras.vocab2Midi( [ int( x ) for x in thisX[ 0 ] ] )
+            f         =  open( 'midi/testout.mid', 'w' )
+            midi.write_midifile( f, midiData )
+            f.close( )
+            quit( )
 
             thisMem  =  sizeof( thisX ) + sizeof( thisY ) + sizeof( x ) + sizeof( y )
 
