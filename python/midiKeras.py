@@ -248,61 +248,62 @@ class MidiKeras:
         track.append( midi.ProgramChangeEvent( tick = 0, data = [ 0 ] ) )
 
         tpe       =  int( pattern.resolution / 4 )
-        print 'tpe', tpe
-        lostTime  =  0
+        #print 'tpe', tpe
+        nextTick  =  0
 
         for vIdx in vData:
             e  =  self.vocab[ vIdx ]
-
-            print 'e', e
-
-            if e is None  or  e == { }:
-                lostTime  +=  tpe
-                continue
+            #print '\ne', e
 
             immediately  =  [ ]
             justAfter    =  [ ]
 
-            for note in e:
-                w      =  e[ note ]
-                note  +=  noteShift
-                if w == OFF_ON:
-                    immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
-                elif w == ON_ON:
-                    immediately.append( None )
-                elif w == ON_OFF:
-                    immediately.append( midi.NoteOffEvent( pitch = note ) )
-                elif w == ON_OFF_ON:
-                    immediately.append( midi.NoteOffEvent( pitch = note ) )
-                    justAfter.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
-                elif w == OFF_ON_OFF:
-                    immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
-                    justAfter.append( midi.NoteOffEvent( pitch = note ) )
-                else:
-                    raise Exception( "Unknown AI-time \"event\" found: " + str( w ) )
+            if e is not None:
+                for note in e:
+                    #print 'note', note
+                    w      =  e[ note ]
+                    #print 'w', w
+                    note  +=  noteShift
+
+                    if w == OFF_ON:
+                        immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
+                    elif w == ON_OFF:
+                        immediately.append( midi.NoteOffEvent( pitch = note ) )
+                    elif w == ON_OFF_ON:
+                        immediately.append( midi.NoteOffEvent( pitch = note ) )
+                        justAfter.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
+                    elif w == OFF_ON_OFF:
+                        immediately.append( midi.NoteOnEvent( pitch = note, velocity = 100 ) )
+                        justAfter.append( midi.NoteOffEvent( pitch = note ) )
+
+            #print 'immediately'
 
 
             for i, event in enumerate( immediately ):
-                if event is None:
-                    lostTime += tpe
-                    continue
                 if i == 0:
-                    event.tick  =  tpe + lostTime
-                    lostTime  =  0
+                    event.tick  =  nextTick
                 else:
                     event.tick  =  0
+                #print 'event', event
                 track.append( event )
 
+            if immediately != [ ]:
+                nextTick  =  0
+            #print 'justAfter'
+
             for i, event in enumerate( justAfter ):
-                if event is None:
-                    lostTime += tpe
-                    continue
                 if i == 0:
-                    event.tick  =  tpe + 1 + lostTime
-                    lostTime  =  0
+                    event.tick  =  nextTick
                 else:
                     event.tick  =  0
+                #print 'event', event
                 track.append( event )
+
+            if justAfter != [ ]:
+                nextTick  =  0
+
+            nextTick  +=  tpe
+            #print 'nextTick', nextTick
 
 
         track.append( midi.EndOfTrackEvent( tick = 0 ) )

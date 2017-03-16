@@ -185,7 +185,6 @@ def doIt( a, b ):
 
 class GUI:
     curSongIdx     =  0
-    curTrackIdx    =  ( )
     channelSets    =  [ ]
     playSP         =  None
     ppc            =  64
@@ -199,23 +198,11 @@ class GUI:
     def changeSong( self, e ):
         self.curSongIdx  =  self.songLB.curselection( )[ 0 ]
         tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
-        self.trackLB.delete( 0, END )
-        for i, track in enumerate( tracks ):
-            self.trackLB.insert( END, 'Track ' + str( i ) )
 
-        self.curTrackIdx  =  ( )
-        self.changeTrack( None )
-
-        self.resetChannelSets( )
-
-        self.canvas.config( scrollregion = self.canvas.bbox( ALL ) )
-
-    def changeTrack( self, e = None ):
         tracks  =  midiKeras.midiRip( self.inputFiles[ self.curSongIdx ] )
 
-        if e:
-            self.curTrackIdx  =  self.trackLB.curselection( )
-
+        self.channelRects   =  { }
+        self.channelBounds  =  { }
         self.canvas.delete( ALL )
 
         for track in tracks:
@@ -228,8 +215,15 @@ class GUI:
         for c in range( 16 ):
             self.canvas.create_text( 0, self.ppc / 2 + c * self.ppc, anchor = W, text = str( c ) )
 
+        self.resetChannelSets( )
+
+        self.canvas.config( scrollregion = self.canvas.bbox( ALL ) )
+
     def addChannelSet( self ):
-        self.channelSets.append( list( self.channelLB.curselection( ) ) )
+        curSel  =  list( self.channelLB.curselection( ) )
+        if curSel  ==  [ ]:
+            curSel  =  range( 16 )
+        self.channelSets.append( curSel )
         self.channelSetText.config( text = str( self.channelSets ) )
 
     def resetChannelSets( self ):
@@ -302,6 +296,8 @@ class GUI:
     def canvasClick( self, e ):
         #props = ['char', 'delta', 'height', 'keycode', 'keysym', 'keysym_num', 'num', 'send_event', 'serial', 'state', 'time', 'type', 'widget', 'width', 'x', 'x_root', 'y', 'y_root']
         canvas  =  e.widget
+        canvas.focus( )
+
         x       =  canvas.canvasx( e.x )
         y       =  canvas.canvasy( e.y )
 
@@ -338,7 +334,6 @@ class GUI:
         self.channelBounds[ self.dragCIdx ]  =  ( self.dragStartTime, self.dragTime )
 
     def canvasKey( self, e ):
-        print e.keysym
         if e.keysym == 'Up':
             self.canvas.yview_scroll( -1, 'units' )
         elif e.keysym == 'Down':
@@ -354,22 +349,13 @@ class GUI:
         self.songFrame  =  Frame( self.leftFrame )
         self.songSB  =  Scrollbar( self.songFrame )
         self.songSB.pack( side = RIGHT, fill = Y )
-        self.songLB  =  Listbox( self.songFrame, yscrollcommand = self.songSB.set )
+        self.songLB  =  Listbox( self.songFrame, yscrollcommand = self.songSB.set, width = 50 )
         for i, f in enumerate( self.inputFiles ):
             self.songLB.insert( END, str( f ) )
         self.songLB.pack( side = LEFT, fill = BOTH )
         self.songLB.bind( "<Double-Button-1>", self.changeSong )
         self.songSB.config( command = self.songLB.yview )
         self.songFrame.pack( side = TOP )
-
-        self.trackFrame  =  Frame( self.leftFrame )
-        self.trackSB  =  Scrollbar( self.trackFrame )
-        self.trackSB.pack( side = RIGHT, fill = Y )
-        self.trackLB  =  Listbox( self.trackFrame, yscrollcommand = self.trackSB.set, selectmode = EXTENDED )
-        self.trackLB.pack( side = LEFT, fill = BOTH )
-        self.trackLB.bind( "<Button-1>", self.changeTrack )
-        self.trackSB.config( command = self.trackLB.yview )
-        self.trackFrame.pack( side = TOP )
 
         self.channelLB  =  Listbox( self.leftFrame, selectmode = EXTENDED )
         for c in range( 16 ):
@@ -396,7 +382,7 @@ class GUI:
 
         self.leftFrame.pack( side = LEFT )
 
-        self.canvas  =  Canvas( self.master, width = 1200, height = 1200, background = 'white' )
+        self.canvas  =  Canvas( self.master, width = 1600, height = 1200, background = 'white' )
         self.canvas.pack( side = LEFT )
         self.canvas.bind( "<Button-1>",  self.canvasClick )
         self.canvas.bind( "<B1-Motion>", self.canvasDrag )
@@ -484,11 +470,13 @@ if __name__ == '__main__':
     for d in trainDirs:
         inputFiles.extend( scrapeDir( d ) )
 
+    print 'len inputFiles', len( inputFiles )
+
     # sift through files
-    #master  =  Tk( )
-    #gui     =  GUI( master, inputFiles )
-    #gui.start( )
-    #quit( )
+    master  =  Tk( )
+    gui     =  GUI( master, inputFiles )
+    gui.start( )
+    quit( )
 
     # initialize midiKeras.vocab
     # print 'initializing vocab'
@@ -523,11 +511,12 @@ if __name__ == '__main__':
             if thisX is None and thisY is None:
                 ( thisX, thisY )  =  midiKeras.oneStep( f, returnTrainingData = True )
 
-            midiData  =  midiKeras.vocab2Midi( [ int( x ) for x in thisX[ 1 ] ] )
-            f         =  open( 'midi/testout.mid', 'w' )
-            midi.write_midifile( f, midiData )
-            f.close( )
-            quit( )
+            # XXX test midi output XXX
+            #midiData  =  midiKeras.vocab2Midi( [ int( x ) for x in thisX[ 0 ] ] )
+            #f         =  open( 'midi/testout.mid', 'w' )
+            #midi.write_midifile( f, midiData )
+            #f.close( )
+            #quit( )
 
             thisMem  =  sizeof( thisX ) + sizeof( thisY ) + sizeof( x ) + sizeof( y )
 
