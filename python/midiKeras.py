@@ -12,6 +12,7 @@ from keras.layers.wrappers import TimeDistributed
 from keras.optimizers import RMSprop
 from keras.utils.np_utils import to_categorical
 import keras.backend as K
+from copy import copy
 
 # graphics
 from PIL import Image
@@ -94,7 +95,7 @@ class MidiKeras:
         return x
 
 
-    def oneStep( self, midiFile, returnTrainingData = False ):
+    def oneStep( self, midiFile, returnTrainingData = False, vocabDeltaLimit = None ):
 
         # the MIDI pattern
         pattern = midi.read_midifile( midiFile )
@@ -116,7 +117,6 @@ class MidiKeras:
             buildingEvent  =  { }
 
             for e in track:
-                print e
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
                     isOn = False
                 elif isinstance( e, midi.NoteOnEvent ):
@@ -177,11 +177,12 @@ class MidiKeras:
             if buildingEvent:
                 events.append( buildingEvent.copy( ) )
 
-            print 'events', events
+            #print 'events', events
 
             # break the events up into chunks
             startIdx        =  0
             makeMoreChunks  =  True
+            bkupVocab  =  copy( self.vocab )
             while makeMoreChunks:
                 diffCount     =  0
                 numDiff       =  15 # arbitrary constant
@@ -218,9 +219,14 @@ class MidiKeras:
                 if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
                     zeroPitch  =  min( eList[ -2 ].keys( ) )
                     eList  =  [ dict( [ ( p - zeroPitch, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+
                     for e in eList:
                         if e not in self.vocab:
                             self.vocab.append( e )
+                            if vocabDeltaLimit is not None  and  len( self.vocab ) - len( bkupVocab ) > vocabDeltaLimit:
+                                self.vocab  =  bkupVocab
+                                return False
+
                         eIdx  =  self.vocab.index( e )
                         vList.append( eIdx )
 
@@ -232,7 +238,7 @@ class MidiKeras:
         if returnTrainingData:
             return ( retX, retY )
         else:
-            return None
+            return True
 
 
     def vocab2Midi( self, vData, noteShift = 64 ):

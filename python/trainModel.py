@@ -1,8 +1,9 @@
 import midiKeras as mk
 import sys
 from sys import getsizeof as sizeof
-from os import path, listdir, system
+from os import path, listdir, system, rename
 from os.path import isdir, isfile
+from shutil import copyfile
 from time import strftime
 import pickle
 import numpy as np
@@ -45,12 +46,12 @@ class Trainer:
         # total-number-of-training-points  X  length-of-vocab
         (self.fTrainData, self.fTrainLabels) = midiKeras.formatData(self.trainData)
 
-        if len(self.testData):
+        if len( self.testData ):
             (self.fTestData, self.fTestLabels) = midiKeras.formatData(self.testData)
 
     def imgTest( self, iterN ):
         self.model.reset_states()
-        img = PIL.Image.new( 'RGB', ( max( len(x) for x in self.trainData ) + 1, 129 * len(self.trainData) ) )
+        img = PIL.Image.new( 'RGB', ( max( len( x ) for x in self.trainData ) + 1, 129 * len( self.trainData ) ) )
         for i, track in enumerate(self.trainData):
             for j, k in enumerate(track):
                 e = midiKeras.vocab[k]
@@ -62,7 +63,7 @@ class Trainer:
         #for ( p, a ) in zip( pred, np.append( self.fTrainData[2:], [[0],[0]] ) ):
         #    print str(p) + '\t' + str(a)
         i = 1
-        for batchIdx in range(0, len(pred), self.batchShape[0]):
+        for batchIdx in range(0, len( pred ), self.batchShape[0]):
             batch = pred[batchIdx : batchIdx + self.batchShape[0]]
             es = [midiKeras.vocab[x] for x in batch]
             for j, e in enumerate(es):
@@ -86,10 +87,10 @@ class Trainer:
         while True:
             print '\ni:', i
             self.imgTest( i )
-            metrics = np.zeros((len(self.model.metrics_names), ))
+            metrics = np.zeros( (len( self.model.metrics_names ), ) )
 
             self.model.reset_states()
-            for j in range(0, len(self.fTrainData), self.batchShape[0]):
+            for j in range( 0, len( self.fTrainData ), self.batchShape[0] ):
                 batch = (self.fTrainData[j:j + self.batchShape[0]], self.fTrainLabels[j:j + self.batchShape[0]])
                 metrics += self.model.train_on_batch(batch[0], batch[1])
             metrics /= len(self.fTrainData) / float(self.batchShape[0])
@@ -131,6 +132,38 @@ def scrapeDir( dir ):
             ret.extend( scrapeDir( full ) )
         elif re.match( '(.*)\.mid', full ):
             ret.append( full )
+    return ret
+
+
+def scrapeDir1Ch( dir ):
+    ret = [ ]
+    for f in listdir( dir ):
+        full  =  path.join( dir, f )
+        if isdir( full ):
+            ret.extend( scrapeDir1Ch( full ) )
+        elif re.match( '(.*)\.mid', full ):
+            try:
+                pattern  =  midi.read_midifile( full )
+            except:
+                continue
+            whichC  =  None
+            thisOne  =  True
+            for track in pattern:
+                for event in track:
+                    if not hasattr( event, 'channel' ):
+                        continue
+                    if whichC is None  and  event.channel != 9:
+                        whichC  =  event.channel
+                    elif event.channel != whichC  or  event.channel == 9:
+                        thisOne  =  False
+                        break
+            if thisOne:
+                dst  =  path.join( THIS_PATH, 'midi/train/oneCh', path.basename( full ) )
+                i  =  2
+                while path.isfile( dst ):
+                    dst  =  dst[ :-4 ] + "-p" + dst[ -4: ]
+                copyfile( full, dst )
+                ret.append( full )
     return ret
 
 
@@ -185,7 +218,6 @@ def doIt( a, b ):
 
 class GUI:
     curSongIdx     =  0
-    channelSets    =  [ ]
     playSP         =  None
     ppc            =  64
     channelRects   =  { }
@@ -205,38 +237,31 @@ class GUI:
         self.channelBounds  =  { }
         self.canvas.delete( ALL )
 
-        for track in tracks:
+        trPCh  =  { }
+        for i, track in enumerate( tracks ):
             for note in track:
                 x1  =       3 * ( note[ 't' ] ) + 20
                 x2  =  x1 + 3 * ( note[ 'd' ] )
                 y   =  self.ppc - note[ 'n' ] * self.ppc / 128 + note[ 'c' ] * self.ppc
                 self.canvas.create_rectangle( ( x1, y, x2, y ) )
 
-        for c in range( 16 ):
-            self.canvas.create_text( 0, self.ppc / 2 + c * self.ppc, anchor = W, text = str( c ) )
+                if note[ 'c' ] not in trPCh:
+                    trPCh[ note[ 'c' ] ]  =  set( )
 
-        self.resetChannelSets( )
+                trPCh[ note[ 'c' ] ].add( i )
+
+        for c in range( 16 ):
+            self.canvas.create_text( 0, self.ppc / 2 + c * self.ppc,      anchor = W, text = str( c ) )
+            if c in trPCh:
+                if len( trPCh[ c ] )  >  1:
+                    text  =  '(' + str( len( trPCh[ c ] ) ) + ')'
+                    self.canvas.create_text( 0, self.ppc / 2 + c * self.ppc + 11, anchor = W, text = text, fill = 'red' )
 
         self.canvas.config( scrollregion = self.canvas.bbox( ALL ) )
 
-    def addChannelSet( self ):
-        curSel  =  list( self.channelLB.curselection( ) )
-        if curSel  ==  [ ]:
-            curSel  =  range( 16 )
-        self.channelSets.append( curSel )
-        self.channelSetText.config( text = str( self.channelSets ) )
-
-    def resetChannelSets( self ):
-        self.channelSets  =  [ ]
-        self.channelSetText.config( text = str( self.channelSets ) )
-
     def play( self ):
-        if self.channelSets  ==  [ ]:
-            print 'Empty channel set!'
-            return
-
         outPath  =  path.join( '/tmp', path.basename( self.inputFiles[ self.curSongIdx ] ) )
-        self._save( outPath )
+        outPath  =  self._save( outPath )
 
         self.playSP  =  Popen( [ 'timidity', outPath ] )
 
@@ -250,39 +275,46 @@ class GUI:
         output  =  midi.Pattern( )
         output.resolution  =  pattern.resolution
 
-        for channelSet in self.channelSets:
-            for track in pattern:
-                time       =  0
-                lostTime   =  0
-                thisTrack  =  midi.Track( )
-                for event in track:
-                    if not hasattr( event, 'channel' )  or \
-                            ( event.channel in channelSet  and \
-                                ( event.channel not in self.channelBounds  or \
-                                    (
-                                        ( time + lostTime + event.tick ) / pattern.resolution  >  self.channelBounds[ event.channel ][ 0 ]  and \
-                                        ( time + lostTime + event.tick ) / pattern.resolution  <  self.channelBounds[ event.channel ][ 1 ] ) ) ) :
-                        #if hasattr(event,'channel') and event.channel != 9:
-                        #    print event
-                        if lostTime  >  0:
-                            event.tick  +=  lostTime
-                            lostTime     =  0
-                        thisTrack.append( event )
-                        time  +=  event.tick
-                    else:
-                        lostTime  +=  event.tick
+        for track in pattern:
+            time       =  0
+            lostTime   =  0
+            thisTrack  =  midi.Track( )
+            for event in track:
+                et  =  ( time + lostTime + event.tick ) / pattern.resolution
+                if not hasattr( event, 'channel' )  or \
+                        ( \
+                            ( event.channel in self.channelBounds  and \
+                            et  >  self.channelBounds[ event.channel ][ 0 ]  and \
+                            et  <  self.channelBounds[ event.channel ][ 1 ] \
+                        )  or \
+                        self.channelBounds == { } ):
+                    #if hasattr(event,'channel') and event.channel != 9:
+                    #    print event
+                    if lostTime  >  0:
+                        event.tick  +=  lostTime
+                        lostTime     =  0
 
-                output.append( thisTrack )
+                    thisTrack.append( event )
+
+                    time  +=  event.tick
+                else:
+                    lostTime  +=  event.tick
+
+            output.append( thisTrack )
+
+        i  =  2
+        while path.isfile( fileName ):
+            fileName  =  fileName[ :-4 ] + "-p" + fileName[ -4: ]
 
         f  =  open( fileName, 'w')
         midi.write_midifile( f, output )
         f.close( )
 
-    def save( self ):
-        if self.channelSets  ==  [ ]:
-            print 'Empty channel set!'
-            return
+        print 'Saved!', fileName
 
+        return fileName
+
+    def save( self ):
         outPath  =  path.join( THIS_PATH, 'midi', 'train', 'filtered', path.basename( self.inputFiles[ self.curSongIdx ] ) )
         self._save( outPath )
 
@@ -290,8 +322,6 @@ class GUI:
         #line  =  self.inputFiles[ self.curSongIdx ] + '\t' + str( self.channelSets ) + '\n'
         #f.write( line )
         #f.close( )
-
-        print 'Saved!'
 
     def canvasClick( self, e ):
         #props = ['char', 'delta', 'height', 'keycode', 'keysym', 'keysym_num', 'num', 'send_event', 'serial', 'state', 'time', 'type', 'widget', 'width', 'x', 'x_root', 'y', 'y_root']
@@ -347,38 +377,24 @@ class GUI:
         self.leftFrame  =  Frame( self.master )
 
         self.songFrame  =  Frame( self.leftFrame )
-        self.songSB  =  Scrollbar( self.songFrame )
-        self.songSB.pack( side = RIGHT, fill = Y )
-        self.songLB  =  Listbox( self.songFrame, yscrollcommand = self.songSB.set, width = 50 )
+        self.songSB     =  Scrollbar( self.songFrame )
+        self.songLB     =  Listbox( self.songFrame, yscrollcommand = self.songSB.set, width = 50, height = 50 )
         for i, f in enumerate( self.inputFiles ):
             self.songLB.insert( END, str( f ) )
         self.songLB.pack( side = LEFT, fill = BOTH )
         self.songLB.bind( "<Double-Button-1>", self.changeSong )
+        self.songSB.pack( side = RIGHT, fill = Y )
         self.songSB.config( command = self.songLB.yview )
         self.songFrame.pack( side = TOP )
 
-        self.channelLB  =  Listbox( self.leftFrame, selectmode = EXTENDED )
-        for c in range( 16 ):
-            self.channelLB.insert( END, str( c ) )
-        self.channelLB.pack( side = TOP )
+        self.playBtn  =  Button( self.leftFrame, text = 'Play', command = self.play )
+        self.playBtn.pack( side = TOP )
 
-        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Add Channel Set', command = self.addChannelSet )
-        self.addChannelSetBtn.pack( side = TOP )
+        self.stopBtn  =  Button( self.leftFrame, text = 'Stop', command = self.stop )
+        self.stopBtn.pack( side = TOP )
 
-        self.resetChannelSetsBtn  =  Button( self.leftFrame, text = 'Reset Channel Sets', command = self.resetChannelSets )
-        self.resetChannelSetsBtn.pack( side = TOP )
-
-        self.channelSetText  =  Label( self.leftFrame, text = '[]' )
-        self.channelSetText.pack( side = TOP )
-
-        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Play', command = self.play )
-        self.addChannelSetBtn.pack( side = TOP )
-
-        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Stop', command = self.stop )
-        self.addChannelSetBtn.pack( side = TOP )
-
-        self.addChannelSetBtn  =  Button( self.leftFrame, text = 'Save', command = self.save )
-        self.addChannelSetBtn.pack( side = TOP )
+        self.saveBtn  =  Button( self.leftFrame, text = 'Save', command = self.save )
+        self.saveBtn.pack( side = TOP )
 
         self.leftFrame.pack( side = LEFT )
 
@@ -412,7 +428,7 @@ if __name__ == '__main__':
     i = 1
 
     # parse command line arguments
-    while i < len(sys.argv):
+    while i < len( sys.argv ):
 
         # switch on argument i
         if sys.argv[i] == 'train':
@@ -443,18 +459,15 @@ if __name__ == '__main__':
             maxEpochs = int( sys.argv[i + 1] )
             i += 1
         elif sys.argv[i] == 'dir':
-            isTrainFile = False
-            isTrainDir  = True
+            isTrainFile    = False
+            isTrainDir     = True
+            isTrainDir1Ch  =  False
+        elif sys.argv[i] == 'dirOneCh':
+            inputFiles.extend( scrapeDir1Ch( sys.argv[i + 1] ) )
+            i += 1
         elif sys.argv[i] == 'test-frag':
             testFrag = float( sys.argv[i + 1] )
             i += 1
-        elif path.exists( sys.argv[i] ):
-            if isTrainFile:
-                inputFiles.append( sys.argv[i] )
-            elif isTrainDir and isdir( sys.argv[i] ):
-                trainDirs.append( sys.argv[i] )
-            else:
-                testFiles.append( sys.argv[i] )
         elif sys.argv[i] == 'dump':
             p = midi.read_midifile( inputFiles[ -1 ] )
             print 'format', p.format
@@ -462,6 +475,16 @@ if __name__ == '__main__':
                 print 'track'
                 for e in t:
                     print e
+            quit( )
+        elif path.exists( sys.argv[i] ):
+            if isTrainFile:
+                inputFiles.append( sys.argv[i] )
+            elif isTrainDir and isdir( sys.argv[i] ):
+                trainDirs.append( sys.argv[i] )
+            else:
+                testFiles.append( sys.argv[i] )
+        else:
+            print 'Unknown:', sys.argv[i]
             quit( )
 
         i += 1
@@ -478,18 +501,27 @@ if __name__ == '__main__':
     gui.start( )
     quit( )
 
+    filtered  =  [ ]
     # initialize midiKeras.vocab
-    # print 'initializing vocab'
+    print 'initializing vocab'
     for i, f in enumerate( inputFiles ):
         try:
-            print str( i + 1 ) + ' / ' + str( len(inputFiles) ) + ' ( ' + f + ' )'
-            midiKeras.oneStep( f, returnTrainingData = False )
+            print str( i + 1 ) + ' / ' + str( len( inputFiles ) ) + ' ( ' + f + ' )'
+            vdl  =  ( 1000000 - len( midiKeras.vocab ) )  /  ( len( inputFiles ) - i )
+            print 'vdl', vdl
+            if midiKeras.oneStep( f, returnTrainingData = False, vocabDeltaLimit = vdl ):
+                print 'appended'
+                filtered.append( f )
+            print len( midiKeras.vocab ), sizeof( midiKeras.vocab )
         except Exception, e:
             continue
 
-    #print 'vocab:'
-    #for i, v in enumerate( midiKeras.vocab ):
-    #    print i, v
+    print 'len filtered', len( filtered )
+    inputFiles  =  filtered
+
+    print 'vocab:'
+    for i, v in enumerate( midiKeras.vocab ):
+        print i, v
 
     batchSize    =  1
     trainChunk   =  [ ]
@@ -505,7 +537,7 @@ if __name__ == '__main__':
         iter += 1
         print 'iter', iter
 
-        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
         shuffle( inputFiles )
         for i, f in enumerate( inputFiles ):
             if thisX is None and thisY is None:
@@ -521,7 +553,7 @@ if __name__ == '__main__':
             thisMem  =  sizeof( thisX ) + sizeof( thisY ) + sizeof( x ) + sizeof( y )
 
             if thisMem  <  memMax:
-                idx  =  range( len(thisX) )
+                idx  =  range( len( thisX ) )
                 seed( f )
                 shuffle( idx )
                 for j in idx:
@@ -531,21 +563,21 @@ if __name__ == '__main__':
 
             if thisMem  >  memMax:
 
-                trainX = x[ : int( len(x) * 0.9 ) ]
-                trainY = y[ : int( len(y) * 0.9 ) ]
-                testX  = x[ int( len(x) * 0.9 ) : ]
-                testY  = y[ int( len(y) * 0.9 ) : ]
+                trainX = x[ : int( len( x ) * 0.9 ) ]
+                trainY = y[ : int( len( y ) * 0.9 ) ]
+                testX  = x[ int( len( x ) * 0.9 ) : ]
+                testY  = y[ int( len( y ) * 0.9 ) : ]
 
                 model.fit( trainX, trainY, validation_data = ( testX, testY ), nb_epoch = 10, shuffle = True )
 
-                ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+                ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
 
-            if i == len(inputFiles) - 1:
+            if i == len( inputFiles ) - 1:
 
-                trainX  =  x[ : int( len(x) * 0.9 ) ]
-                trainY  =  y[ : int( len(y) * 0.9 ) ]
-                testX   =  x[ int( len(x) * 0.9 ) : ]
-                testY   =  y[ int( len(y) * 0.9 ) : ]
+                trainX  =  x[ : int( len( x ) * 0.9 ) ]
+                trainY  =  y[ : int( len( y ) * 0.9 ) ]
+                testX   =  x[ int( len( x ) * 0.9 ) : ]
+                testY   =  y[ int( len( y ) * 0.9 ) : ]
 
                 #earlyStopping    =  EarlyStopping( monitor = 'val_loss', patience = 20 )
                 #modelCheckpoint  =  ModelCheckpoint( pathPrefix + '-weights.h5', monitor = 'val_loss', verbose = 0, save_best_only = True )
@@ -556,7 +588,7 @@ if __name__ == '__main__':
     quit( )
 
     while True:
-        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len(midiKeras.vocab) )) )
+        ( x, y )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
         keepGoing  =  True
         while keepGoing:
             for f in inputFiles:
@@ -574,7 +606,7 @@ if __name__ == '__main__':
         model.fit( x, y, validation_split = 0.1 )
 
         #for i, f in enumerate( inputFiles ):
-        #    # print str( i + 1 ) + ' / ' + str( len(inputFiles) ) + ' ( ' + f + ' )'
+        #    # print str( i + 1 ) + ' / ' + str( len( inputFiles ) ) + ' ( ' + f + ' )'
         #    ( x, y )  =  midiKeras.oneStep( f, returnTrainingData = True )
         #    iterCnt    =  0
         #    while iterCnt < 10:
@@ -605,7 +637,7 @@ if __name__ == '__main__':
 
             trainChunksNeeded  =  inputLength - len( trainChunk )
             trainChunk.extend( fileData[ :trainChunksNeeded ] )
-            if trainChunksNeeded < len(fileData):
+            if trainChunksNeeded < len( fileData ):
                 pass#testChunksNeeded  =  
 
             if trainChunkSize + fileDataSize  <  maxTrainChunkSize:
@@ -637,7 +669,7 @@ if __name__ == '__main__':
     quit()
 
     # if we have no training data, generate some random data
-    #if not len(trainData):
+    #if not len( trainData ):
     #    for note in range(40, 70):
     #        midiKeras.vocab.append( {note: [mk.NOTE_ON]} )
     #        midiKeras.vocab.append( {note: [mk.NOTE_HOLD]} )
@@ -645,11 +677,11 @@ if __name__ == '__main__':
     #    for i in range(16):
     #        vData = [ ]
     #        for j in range(64):
-    #            vData.append( randint(1, len(midiKeras.vocab) - 1) )
+    #            vData.append( randint(1, len( midiKeras.vocab ) - 1) )
     #        trainData.append(vData)
 
     # if we still have no training data, load all the data from the current mongo db
-    #if not len(trainData):
+    #if not len( trainData ):
     #    client = MongoClient()
     #    db = client.music
     #    compositions = db.composition.find()
@@ -657,10 +689,10 @@ if __name__ == '__main__':
     #        vData = midiKeras.vocabularize( composition['notes'] )
     #        trainData.append( vData )
 
-    #if not len(testData) and testFrag:
+    #if not len( testData ) and testFrag:
     #    shuffle( trainData )
-    #    testIdx = ( int( len(trainData) * testFrag ) * 16 ) / 16
-    #    endIdx  = ( len(trainData) * 16 ) / 16
+    #    testIdx = ( int( len( trainData ) * testFrag ) * 16 ) / 16
+    #    endIdx  = ( len( trainData ) * 16 ) / 16
     #    print testIdx, endIdx
     #    testData = trainData[:testIdx]
     #    trainData = trainData[testIdx:endIdx]
