@@ -95,19 +95,15 @@ class MidiKeras:
         return x
 
 
-    def oneStep( self, midiFile, returnTrainingData = False, vocabDeltaLimit = None ):
+    def midiToEvents( self, midiFile ):
 
         # the MIDI pattern
         pattern = midi.read_midifile( midiFile )
 
         # eventWidth = one sixteenth-note's worth of midi ticks
-        eventWidth = float( pattern.resolution ) / 4.0
+        eventWidth = float( pattern.resolution ) / 12.0
 
-        # return values retX and retY
-        seqLen = 16 * 3
-        if returnTrainingData:
-            retX = np.zeros( ( 0, seqLen ) )
-            retY = np.zeros( ( 0, len( self.vocab ) ) )
+        ret  =  [ ]
 
         for i, track in enumerate( pattern ):
             events         =  [ ]
@@ -115,6 +111,7 @@ class MidiKeras:
             time           =  0
             notesOn        =  { }
             buildingEvent  =  { }
+            firstNote      =  True
 
             for e in track:
                 if isinstance( e, midi.NoteOffEvent ) or ( isinstance( e, midi.NoteOnEvent ) and e.velocity == 0 ):
@@ -123,6 +120,10 @@ class MidiKeras:
                     isOn = True
                 else:
                     continue
+
+                if firstNote:
+                    e.tick     =  0
+                    firstNote  =  False
 
                 # init buildingEvent
                 if buildingEvent is None:
@@ -179,55 +180,88 @@ class MidiKeras:
 
             #print 'events', events
 
-            # break the events up into chunks
-            startIdx        =  0
-            makeMoreChunks  =  True
-            bkupVocab  =  copy( self.vocab )
-            while makeMoreChunks:
-                diffCount     =  0
-                numDiff       =  15 # arbitrary constant
-                eList         =  [ ]
-                vList         =  [ ]
-                lastHappened  =  0
-                eIdx          =  startIdx
+            if events:
+                ret.append( events )
 
-                while diffCount < numDiff  and  len( eList ) < seqLen  and  eIdx < len( events ):
-                    # skip initial empty events
-                    if len( eList ) == 0  and  events[ eIdx ] == { }:
-                        eIdx  +=  1
-                        continue
+        return ret
 
-                    # count number of times the event changes
-                    if len( eList ) == 0  or  eList[ -1 ] != events[ eIdx ]:
-                        diffCount  +=  1
 
-                    eList.append( events[ eIdx ] )
+    def oneStep( self, midiFile, addToVocab = True, returnTrainingData = False ):
 
-                    if eList[ -1 ]  !=  { }:
-                        lastHappened  =  len( eList )
+        # return values retX and retY
+        seqLen  =  16 * 3
+        if returnTrainingData:
+            retX  =  np.zeros( ( 0, seqLen ) )
+            retY  =  np.zeros( ( 0, len( self.vocab ) ) )
 
-                    eIdx += 1
+        tracks     =  self.midiToEvents( midiFile )
+        lenVocab1  =  len( self.vocab )
 
-                if eIdx  >=  len( events ):
-                    makeMoreChunks  =  False
+        for track in tracks:
 
-                startIdx += 4
-                eList = eList[ : lastHappened ]
+            # break the track up into chunks
+            startIdx   =  0
+            endIdx     =  1
+
+            while True:
+
+                eList  =  [ ]
+
+                while startIdx < len( track ):
+                    if OFF_ON in track[ startIdx ].values( )  or  OFF_ON_OFF in track[ startIdx ].values( ):
+                        break
+                    startIdx  +=  1
+
+                endIdx  =  startIdx + 1
+
+                while endIdx < len( track ):
+                    if ON_OFF in track[ endIdx ].values( )  or  OFF_ON_OFF in track[ endIdx ].values( ):
+                        break
+                    endIdx  +=  1
+
+                if endIdx  >=  len( track ):
+                    break
+
+                if endIdx - startIdx + 1  >  seqLen:
+                    startIdx  +=  1
+                    continue
+
+                startE  =  { }
+                for i, e in track[ startIdx ].iteritems( ):
+                    if e == OFF_ON  or  e == OFF_ON_OFF:
+                        startE[ i ]  =  e
+                eList.append( startE )
+
+                for e in track[ startIdx + 1  :  endIdx ]:
+                    eList.append( e )
+
+                endE  =  { }
+                for i, e in track[ endIdx ].iteritems( ):
+                    if e == ON_OFF  or  e == OFF_ON_OFF:
+                        endE[ i ]  =  e
+                eList.append( endE )
+
+                startIdx  +=  1
+
+                vList  =  [ ]
 
                 # shift pitches so every chunk's penultimate event's lowest pitch is numbered zero
-                # TODO use the last event with a pitch - now we only consider the last in the list
+                # modulate pitches to within one octave of the "zero" pitch
                 if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
                     zeroPitch  =  min( eList[ -2 ].keys( ) )
-                    eList  =  [ dict( [ ( p - zeroPitch, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+                    eList  =  [ dict( [ ( ( p - zeroPitch ) % 12, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
 
                     for e in eList:
-                        if e not in self.vocab:
+                        if len( e )  >  2:
+                            self.vocab  =  self.vocab[ :lenVocab1 ]
+                            return False
+                        elif e not in self.vocab  and  addToVocab:
                             self.vocab.append( e )
-                            if vocabDeltaLimit is not None  and  len( self.vocab ) - len( bkupVocab ) > vocabDeltaLimit:
-                                self.vocab  =  bkupVocab
-                                return False
 
-                        eIdx  =  self.vocab.index( e )
+                        if e in self.vocab:
+                            eIdx  =  self.vocab.index( e )
+                        else:
+                            eIdx  =  1
                         vList.append( eIdx )
 
                     if returnTrainingData:
@@ -253,7 +287,7 @@ class MidiKeras:
         track  =  midi.Track( )
         track.append( midi.ProgramChangeEvent( tick = 0, data = [ 0 ] ) )
 
-        tpe       =  int( pattern.resolution / 4 )
+        tpe       =  int( pattern.resolution / 12 )
         #print 'tpe', tpe
         nextTick  =  0
 
@@ -335,19 +369,27 @@ class MidiKeras:
         layers = [ ]
         layers.append( Input( shape = (inputLength,) ) )
         layers.append( Embedding( len( self.vocab ), 25, mask_zero = True ) )
-        layers.append( LSTM( 100, stateful = False ) )
-        for i in range( 10 ):
-            layers.append( Highway( activation = 'relu' ) )
+
+        # "p-"
+        #layers.append( LSTM( 100 ) )
+        #for i in range( 10 ):
+        #    layers.append( Highway( activation = 'relu' ) )
+
+        # "q-"
+        for i in range( 4 ):
+            layers.append( LSTM( 50, return_sequences = True ) )
+        layers.append( LSTM( 50 ) )
+
         layers.append( Dense( len( self.vocab ), activation = 'softmax' ) )
         return layers
 
     def genFuncModel( self, layers ):
-        layer  =  inputs  =  layers[ 0 ]
+        l  =  inputs  =  layers[ 0 ]
 
-        for l in layers[ 1: ]:
-            layer  =  l( layer )
+        for layer in layers[ 1: ]:
+            l  =  layer( l )
 
-        model  =  Model( input = inputs, output = layer )
+        model  =  Model( input = inputs, output = l )
         rmsProp  =  RMSprop( lr = 0.0001 )
         model.compile( optimizer = rmsProp, loss = 'categorical_crossentropy', metrics = [ 'accuracy' ] )
 
@@ -440,7 +482,7 @@ class MidiKeras:
         return (fData, fLabels)
 
 
-    def midiRip( self, midiFile, visDebug = False ):
+    def midiToNotes( self, midiFile, visDebug = False ):
         global ec
         pattern = midi.read_midifile( midiFile )
         offset = 0
