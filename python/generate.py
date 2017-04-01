@@ -12,6 +12,14 @@ if __name__ == '__main__':
     global model, vocab, midiKeras
 
     midiKeras  =  mk.MidiKeras( )
+    for a in range( 12 ):
+        for b in range( 12 ):
+            for c in range( 5 ):
+                for d in range( 5 ):
+                    e = { a: c, b: d }
+                    if e not in midiKeras.vocab:
+                        midiKeras.vocab.append( e )
+
     numP  =  10
 
     # parse command line arguments
@@ -46,8 +54,6 @@ if __name__ == '__main__':
                     midiKeras.setVocab( vocab )
 
         elif sys.argv[ i ]  ==  'input':
-
-            print 'hi'
 
             inputFile  =  sys.argv[ i + 1 ]
             i  +=  1

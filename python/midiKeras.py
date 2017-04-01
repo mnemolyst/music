@@ -27,6 +27,9 @@ ON_OFF     = 2
 ON_OFF_ON  = 3
 OFF_ON_OFF = 4
 
+QN_DIV = 12
+SEQ_LEN = QN_DIV * 4 * 3
+
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
 
 class MidiKeras:
@@ -100,8 +103,8 @@ class MidiKeras:
         # the MIDI pattern
         pattern = midi.read_midifile( midiFile )
 
-        # eventWidth = one sixteenth-note's worth of midi ticks
-        eventWidth = float( pattern.resolution ) / 12.0
+        # eventWidth = one third of one sixteenth-note's worth of midi ticks
+        eventWidth = float( pattern.resolution ) / QN_DIV
 
         ret  =  [ ]
 
@@ -186,13 +189,47 @@ class MidiKeras:
         return ret
 
 
-    def oneStep( self, midiFile, addToVocab = True, returnTrainingData = False ):
+    def vocabularize( self, eList, labelE ):
+
+        retX  =  np.zeros( ( 0, SEQ_LEN ) )
+        retY  =  np.zeros( ( 0, len( self.vocab ) ) )
+
+        vList  =  [ ]
+
+        # shift pitches so every chunk's last event's lowest pitch is numbered zero
+        # modulate pitches to within one octave of the "zero" pitch
+        zeroPitch  =  min( eList[ -1 ].keys( ) )
+        eList      =  [ dict( [ ( ( p - zeroPitch ) % 12, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
+
+        for e in eList:
+
+            if e in self.vocab:
+                eIdx  =  self.vocab.index( e )
+            else:
+                eIdx  =  1
+
+            vList.append( eIdx )
+
+        labelE  =  dict( [ ( ( p - zeroPitch ) % 12, labelE[ p ] ) for p in labelE.keys( ) ] )
+
+        if labelE not in self.vocab:
+            print labelE, 'not in vocab'
+            return False
+
+        labelV  =  self.vocab.index( labelE )
+
+        thisX  =  np.array( vList ).reshape(( 1, -1 ))
+        retX   =  np.vstack( ( retX, np.pad( thisX, (( 0, 0 ), ( 0, SEQ_LEN - len( vList ) )), 'constant' ) ) )
+        retY   =  np.vstack( ( retY, to_categorical( labelV, len( self.vocab ) ) ) )
+
+        return ( retX, retY )
+
+
+    def oneStep( self, midiFile, addToVocab = True ):
 
         # return values retX and retY
-        seqLen  =  16 * 3
-        if returnTrainingData:
-            retX  =  np.zeros( ( 0, seqLen ) )
-            retY  =  np.zeros( ( 0, len( self.vocab ) ) )
+        retX  =  np.zeros( ( 0, SEQ_LEN ) )
+        retY  =  np.zeros( ( 0, len( self.vocab ) ) )
 
         tracks     =  self.midiToEvents( midiFile )
         lenVocab1  =  len( self.vocab )
@@ -201,30 +238,31 @@ class MidiKeras:
 
             # break the track up into chunks
             startIdx   =  0
-            endIdx     =  1
+            endIdx     =  0
 
             while True:
-
-                eList  =  [ ]
 
                 while startIdx < len( track ):
                     if OFF_ON in track[ startIdx ].values( )  or  OFF_ON_OFF in track[ startIdx ].values( ):
                         break
                     startIdx  +=  1
 
-                endIdx  =  startIdx + 1
+                endIdx  =  min( startIdx + SEQ_LEN, len( track ) )
 
-                while endIdx < len( track ):
-                    if ON_OFF in track[ endIdx ].values( )  or  OFF_ON_OFF in track[ endIdx ].values( ):
-                        break
-                    endIdx  +=  1
-
-                if endIdx  >=  len( track ):
+                if endIdx  <=  startIdx + 2:
                     break
 
-                if endIdx - startIdx + 1  >  seqLen:
+                while endIdx > startIdx + 2:
+                    if ON_OFF in track[ endIdx - 1 ].values( )  or  OFF_ON_OFF in track[ endIdx - 1 ].values( ):
+                        break
+                    endIdx  -=  1
+
+                if endIdx  <=  startIdx + 2:
                     startIdx  +=  1
                     continue
+
+
+                eList  =  [ ]
 
                 startE  =  { }
                 for i, e in track[ startIdx ].iteritems( ):
@@ -232,47 +270,87 @@ class MidiKeras:
                         startE[ i ]  =  e
                 eList.append( startE )
 
-                for e in track[ startIdx + 1  :  endIdx ]:
+                for e in track[ startIdx + 1  :  endIdx - 1 ]:
                     eList.append( e )
 
                 endE  =  { }
-                for i, e in track[ endIdx ].iteritems( ):
+                for i, e in track[ endIdx - 1 ].iteritems( ):
                     if e == ON_OFF  or  e == OFF_ON_OFF:
                         endE[ i ]  =  e
                 eList.append( endE )
 
+                labelE  =  track[ endIdx - 1 ]
+
+
+                v  =  self.vocabularize( eList, labelE )
+
+                if v:
+                    ( vX, vY )  =  v
+
+                    retX  =  np.vstack( ( retX, vX ) )
+                    retY  =  np.vstack( ( retY, vY ) )
+                else:
+                    startIdx  +=  1
+                    continue
+
+
+                minEndIdx  =  endIdx + 1
+
+                while minEndIdx  <  startIdx + SEQ_LEN:
+                    if ON_ON in track[ minEndIdx - 1 ].values( ):
+                        break
+                    minEndIdx  +=  1
+
+                endIdx  =  minEndIdx + 1
+
+                while endIdx  <  startIdx + SEQ_LEN:
+                    if track[ endIdx - 1 ]  !=  track[ minEndIdx - 1 ]:
+                        break
+                    endIdx  +=  1
+
+                if endIdx  >=  min( startIdx + SEQ_LEN, len( track ) ):
+                    startIdx  +=  1
+                    continue
+
+                endIdx  =  ( minEndIdx + endIdx ) / 2
+
+
+                eList  =  [ ]
+
+                startE  =  { }
+                for i, e in track[ startIdx ].iteritems( ):
+                    if e == OFF_ON  or  e == OFF_ON_OFF:
+                        startE[ i ]  =  e
+                eList.append( startE )
+
+                for e in track[ startIdx + 1  :  endIdx - 1 ]:
+                    eList.append( e )
+
+                endE  =  { }
+                for i, e in track[ endIdx - 1 ].iteritems( ):
+                    if e == ON_ON:
+                        endE[ i ]  =  e
+                eList.append( endE )
+
+                labelE  =  track[ endIdx - 1 ]
+
+
+                v  =  self.vocabularize( eList, labelE )
+
+                if v:
+                    ( vX, vY )  =  v
+
+                    retX  =  np.vstack( ( retX, vX ) )
+                    retY  =  np.vstack( ( retY, vY ) )
+                else:
+                    startIdx  +=  1
+                    continue
+
+
                 startIdx  +=  1
 
-                vList  =  [ ]
 
-                # shift pitches so every chunk's penultimate event's lowest pitch is numbered zero
-                # modulate pitches to within one octave of the "zero" pitch
-                if len( eList ) >= 2  and  eList[ -2 ].keys( ) != [ ]:
-                    zeroPitch  =  min( eList[ -2 ].keys( ) )
-                    eList  =  [ dict( [ ( ( p - zeroPitch ) % 12, e[ p ] ) for p in e.keys( ) ] ) for e in eList ]
-
-                    for e in eList:
-                        if len( e )  >  2:
-                            self.vocab  =  self.vocab[ :lenVocab1 ]
-                            return False
-                        elif e not in self.vocab  and  addToVocab:
-                            self.vocab.append( e )
-
-                        if e in self.vocab:
-                            eIdx  =  self.vocab.index( e )
-                        else:
-                            eIdx  =  1
-                        vList.append( eIdx )
-
-                    if returnTrainingData:
-                        thisX  =  np.array( vList[ :-1 ] ).reshape(( 1, -1 ))
-                        retX   =  np.vstack( ( retX, np.pad( thisX, ((0, 0), (0, seqLen - len( vList ) + 1)), 'constant' ) ) )
-                        retY   =  np.vstack( ( retY, to_categorical( vList[ -1: ], len( self.vocab ) ) ) )
-
-        if returnTrainingData:
-            return ( retX, retY )
-        else:
-            return True
+        return ( retX, retY )
 
 
     def vocab2Midi( self, vData, noteShift = 64 ):
@@ -287,7 +365,7 @@ class MidiKeras:
         track  =  midi.Track( )
         track.append( midi.ProgramChangeEvent( tick = 0, data = [ 0 ] ) )
 
-        tpe       =  int( pattern.resolution / 12 )
+        tpe       =  int( pattern.resolution / QN_DIV )
         #print 'tpe', tpe
         nextTick  =  0
 
@@ -376,7 +454,27 @@ class MidiKeras:
         #    layers.append( Highway( activation = 'relu' ) )
 
         # "q-"
-        for i in range( 4 ):
+        #for i in range( 4 ):
+        #    layers.append( LSTM( 50, return_sequences = True ) )
+        #layers.append( LSTM( 50 ) )
+
+        # "r-"
+        #for i in range( 4 ):
+        #    layers.append( LSTM( 75, return_sequences = True ) )
+        #layers.append( LSTM( 75 ) )
+
+        # "s-"
+        #for i in range( 4 ):
+        #    layers.append( LSTM( 100, return_sequences = True ) )
+        #layers.append( LSTM( 100 ) )
+
+        # "t-"
+        #for i in range( 6 ):
+        #    layers.append( LSTM( 50, return_sequences = True ) )
+        #layers.append( LSTM( 50 ) )
+
+        # "u-"
+        for i in range( 8 ):
             layers.append( LSTM( 50, return_sequences = True ) )
         layers.append( LSTM( 50 ) )
 
@@ -528,106 +626,6 @@ class MidiKeras:
         d2 = len( set( e.keys() ) - set( v.keys() ) )
         d3 = sum( [ v[i] != e[i] for i in set( v.keys() ).intersection( set( e.keys() ) ) ] )
         return ( d1 + d2 ) * 100 + d1 * 10 + d3
-
-    ###############
-    #
-    # returns array of indices into self.vocab
-    #
-    ###############
-    def vocabularize( self, notes, addNew = True, missed = None, visDebug = False ):
-
-        # tuple - units of quarter notes
-        ( firstTime, lastTime ) = self.notesLimits( notes )
-
-        smallestBad = None
-        largestGood = None
-        goodEData = None
-        res = 0.25 # quarter notes per event point
-        while True:
-            eData = []
-            # print 'res', res
-
-            # init eData with blanks
-            for i in range( int( ( lastTime - firstTime ) / res ) + 1 ):
-                eData.append({})
-
-            for note in notes:
-                startIdx = int( ( note['t'] - firstTime ) / res )
-                stopIdx = int( ( note['t'] + note['d'] - firstTime ) / res )
-
-                n = note['n']
-
-                if n not in eData[startIdx]:
-                    eData[ startIdx ][ n ] = []
-                e = ( NOTE_ON, note['t'] - firstTime - int( startIdx * res ) )
-                if e not in eData[ startIdx ][ n ]:
-                    eData[ startIdx ][ n ].append( e )
-
-                for i in range(startIdx + 1, stopIdx):
-                    if n not in eData[ i ]:
-                        eData[ i ][ n ] = []
-                    e = (NOTE_HOLD, 0)
-                    if e not in eData[ i ][ n ]:
-                        eData[ i ][ n ].append( e )
-
-                if n not in eData[ stopIdx ]:
-                    eData[ stopIdx ][ n ] = []
-                e = ( NOTE_OFF, note['t'] + note['d'] - firstTime - int( stopIdx * res ) )
-                if e not in eData[ stopIdx ][ n ]:
-                    eData[ stopIdx ][ n ].append( e )
-
-            lens = {}
-            for e in eData:
-                for n in e:
-                    l = len(e[n])
-                    if l not in lens:
-                        lens[l] = 0
-                    lens[l] += 1
-
-            r1 = float( sum( [lens[x] for x in lens if x > 1] ) ) / sum( [lens[x] for x in lens] )
-            r2 = float( sum( [lens[x] for x in lens if x > 2] ) ) / sum( [lens[x] for x in lens] )
-            if ( r1 > 0.05 or r2 > 0.01 ):
-                if smallestBad == None or res < smallestBad:
-                    smallestBad = res
-                res /= 2.0
-            else:
-                if largestGood == None or res > largestGood:
-                    largestGood = res
-                res *= 2.0
-                goodEData = eData
-
-            if smallestBad and largestGood and goodEData and smallestBad == largestGood * 2.0:
-                eData = goodEData
-                res = largestGood
-                break
-
-        vData = []
-        idx = 0
-        for e in eData:
-            for n in e:
-                e[n] = [ x[0] for x in sorted( e[n], key = lambda y: y[1] ) ]
-
-            if e in self.vocab:
-                k = self.vocab.index(e)
-            elif addNew:
-                self.vocab.append( e.copy() )
-                k = len(self.vocab) - 1
-            else:
-                a = [ ( i, self.vocabDiff( x, e ) ) for i, x in enumerate( self.vocab ) if i > 0 ]
-                a.sort( key = lambda x: x[1] )
-                k = a[0][0]
-                if missed != None:
-                    missed[0] += 1
-                #print 'unknown, maybe', [(x[0], self.vocab[x[0]]) for x in a[:3]]
-                #print 'idx', idx, 'e', e, 'vocab[k]', self.vocab[k]
-            idx += 1
-            vData.append( k )
-
-        if visDebug:
-            self.visVData( vData, res )
-
-        #print 'res:', res
-        return vData
 
     def predictSequence(self, model, data, num = 1):
         inSeq = data[:]

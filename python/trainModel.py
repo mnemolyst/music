@@ -1,7 +1,7 @@
 import midiKeras as mk
 import sys
 from sys import getsizeof as sizeof
-from os import path, listdir, system, rename
+from os import path, listdir, system, rename, urandom
 from os.path import isdir, isfile
 from shutil import copyfile
 from time import strftime
@@ -320,8 +320,8 @@ if __name__ == '__main__':
     model        =  None
     vocab        =  [None, {}]
     addToVocab   =  True
-    pathPrefix   =   path.join('keras_models', strftime('%d-%b-%H:%M'))
-    maxEpochs    =  1
+    pathPrefix   =  path.join('keras_models', strftime('%d-%b-%H:%M'))
+    epoch        =  1
 
     # parse command line arguments
     i  =  1
@@ -355,8 +355,8 @@ if __name__ == '__main__':
                     vocab = pickle.loads( f.read( ) )
                     midiKeras.setVocab( vocab )
                 addToVocab = False
-        elif sys.argv[ i ] == 'epochs':
-            maxEpochs = int( sys.argv[ i + 1 ] )
+        elif sys.argv[ i ] == 'epoch':
+            epoch = int( sys.argv[ i + 1 ] )
             i += 1
         elif sys.argv[ i ] == 'dir':
             isTrainFile    = False
@@ -411,7 +411,6 @@ if __name__ == '__main__':
     #quit( )
 
     # initialize midiKeras.vocab
-    filtered  =  [ ]
     for a in range( 12 ):
         for b in range( 12 ):
             for c in range( 5 ):
@@ -420,32 +419,34 @@ if __name__ == '__main__':
                     if e not in midiKeras.vocab:
                         midiKeras.vocab.append( e )
 
+    if not isfile( pathPrefix + '-vocab.pickle' ):
+        with open( pathPrefix + '-vocab.pickle', 'w' ) as f:
+            f.write( pickle.dumps( midiKeras.vocab ) )
+
     #print len( midiKeras.vocab ), sizeof( midiKeras.vocab )
-    for i, f in enumerate( inputFiles ):
-        try:
-            print str( i + 1 ) + ' / ' + str( len( inputFiles ) ) + '  ( ' + f + ' )'
-            e  =  midiKeras.midiToEvents( f )
-            data  =  midiKeras.oneStep( f, returnTrainingData = True )
-            print 'e', e
-            print 'data', data
+    #filtered = [ ]
+    #for i, f in enumerate( inputFiles ):
+    #    try:
+    #        print str( i + 1 ) + ' / ' + str( len( inputFiles ) ) + '  ( ' + f + ' )'
+    #        if midiKeras.oneStep( f ):
+    #            filtered.append(f)
 
-        except Exception, e:
-            continue
+    #    except Exception, e:
+    #        continue
 
-    quit( )
+    #quit( )
 
     #print 'vocab:'
     #for i, v in enumerate( midiKeras.vocab ):
     #    print i, v
 
-    inputLength  =  16 * 3
-    memMax       =  50 * 1024 * 1024 # 50 megabytes
+    memMax       =  25 * 1024 * 1024
     thisTrainX   =  [ ]
     thisTrainY   =  [ ]
     thisTestX    =  [ ]
     thisTestY    =  [ ]
     if not model:
-        layers  =  midiKeras.genLayers( inputLength )
+        layers  =  midiKeras.genLayers( mk.SEQ_LEN )
         model   =  midiKeras.genFuncModel( layers )
         with open( pathPrefix + '-struct.json', 'w' ) as f:
             f.write( model.to_json( ) )
@@ -453,38 +454,41 @@ if __name__ == '__main__':
     # always use the same files for training and for testing
     seed( 'random seed' )
     shuffle( inputFiles )
+    seed( urandom( 64 ) )
+
     splitIdx  =  int( len( inputFiles ) * 0.9 )
     trainFiles  =  inputFiles[ :splitIdx ]
     testFiles   =  inputFiles[ splitIdx: ]
 
-    iter  =  0
     while True:
-        iter  +=  1
-        print 'iter', iter
+        print 'epoch', epoch
 
         shuffle( trainFiles )
         shuffle( testFiles )
 
-        ( trainX, trainY )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
-        ( testX, testY )    =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+        ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+        ( testX, testY )    =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
 
         trainI  =  0
 
         while trainI  <  len( trainFiles ):
 
-            testI  =  min( int( trainI * 0.1 ), len( testFiles ) - 1 )
+            testI  =  min( int( float( trainI ) / len( trainFiles ) * len( testFiles ) ), len( testFiles ) - 1 )
 
             if len( thisTrainX ) == 0:
                 try:
 
                     trainF  =  trainFiles[ trainI ]
-                    ( thisTrainX, thisTrainY )  =  midiKeras.oneStep( trainF, returnTrainingData = True )
+                    ( thisTrainX, thisTrainY )  =  midiKeras.oneStep( trainF )
 
                     testF  =  testFiles[ testI ]
-                    ( thisTestX, thisTestY )  =  midiKeras.oneStep( testF, returnTrainingData = True )
+                    ( thisTestX, thisTestY )  =  midiKeras.oneStep( testF )
 
                     trainI  +=  1
+
                 except:
+
+                    trainI  +=  1
                     continue
 
             trainIdx  =  range( len( thisTrainX ) )
@@ -515,18 +519,22 @@ if __name__ == '__main__':
             if len( thisTrainX ) > 0  or  trainI == len( trainFiles ) - 1:
 
                 percentage  =  trainI * 100 / len( trainFiles )
-                weightPrefix  =  pathPrefix + '-iter_' + str( iter ) + '-' + str( percentage ) + '_prcnt'
+                weightPrefix  =  pathPrefix + '-iter_' + str( epoch ) + '-' + str( percentage ) + '_prcnt'
                 if percentage % 20 == 0  and  not isfile( weightPrefix + '-weights.h5' ):
                     model.save_weights( weightPrefix + '-weights.h5' )
                     #dumpEmbeddingWeights( model, weightPrefix + '-embedding.png' )
 
-                trainMetrics  =  model.train_on_batch( trainX, trainY )
-                testMetrics   =  model.test_on_batch( testX, testY )
+                if len( trainX ) != 0  and  len( testX ) != 0:
+                    trainMetrics  =  model.train_on_batch( trainX, trainY )
+                    testMetrics   =  model.test_on_batch( testX, testY )
 
                 print str( percentage ) + '%', '\ttrain\t', trainMetrics[0], trainMetrics[1], '\ttest\t', testMetrics[0], testMetrics[1]
 
-                ( trainX, trainY )  =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
-                ( testX, testY )    =  ( np.zeros(( 0, inputLength )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+                ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+                ( testX, testY )    =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+
+
+        epoch  +=  1
 
     quit( )
 
