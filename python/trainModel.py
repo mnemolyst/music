@@ -310,17 +310,13 @@ if __name__ == '__main__':
     global midiKeras
     midiKeras = mk.MidiKeras( )
 
-    doRewrite    =  False
-    visDebug     =  False
     isTrainFile  =  True
     inputFiles   =  [ ]
     testFiles    =  [ ]
-    testFrag     =  None
     trainDirs    =  [ ]
     model        =  None
-    vocab        =  [None, {}]
-    addToVocab   =  True
-    pathPrefix   =  path.join('keras_models', strftime('%d-%b-%H:%M'))
+    vocab        =  [ None, {} ]
+    pathPrefix   =  path.join( 'keras_models', strftime( '%d-%b-%H:%M' ) )
     epoch        =  1
 
     # parse command line arguments
@@ -334,10 +330,6 @@ if __name__ == '__main__':
         elif sys.argv[ i ] == 'test':
             isTrainDir  = False
             isTrainFile = False
-        elif sys.argv[ i ] == 'rewrite':
-            doRewrite = True
-        elif sys.argv[ i ] == 'vis':
-            visDebug = True
         elif sys.argv[ i ] == 'model':
             pathPrefix = sys.argv[ i + 1 ]
             i += 1
@@ -354,7 +346,6 @@ if __name__ == '__main__':
                 with open( pathPrefix + '-vocab.pickle' ) as f:
                     vocab = pickle.loads( f.read( ) )
                     midiKeras.setVocab( vocab )
-                addToVocab = False
         elif sys.argv[ i ] == 'epoch':
             epoch = int( sys.argv[ i + 1 ] )
             i += 1
@@ -364,9 +355,6 @@ if __name__ == '__main__':
             isTrainDir1Ch  =  False
         elif sys.argv[ i ] == 'dirOneCh':
             inputFiles.extend( scrapeDir1Ch( sys.argv[ i + 1 ] ) )
-            i += 1
-        elif sys.argv[ i ] == 'test-frag':
-            testFrag = float( sys.argv[ i + 1 ] )
             i += 1
         elif sys.argv[ i ] == 'dump':
             p = midi.read_midifile( inputFiles[ -1 ] )
@@ -440,217 +428,113 @@ if __name__ == '__main__':
     #for i, v in enumerate( midiKeras.vocab ):
     #    print i, v
 
-    memMax       =  25 * 1024 * 1024
-    thisTrainX   =  [ ]
-    thisTrainY   =  [ ]
-    thisTestX    =  [ ]
-    thisTestY    =  [ ]
-    if not model:
-        layers  =  midiKeras.genLayers( mk.SEQ_LEN )
-        model   =  midiKeras.genFuncModel( layers )
-        with open( pathPrefix + '-struct.json', 'w' ) as f:
-            f.write( model.to_json( ) )
+    def go( ):
 
-    # always use the same files for training and for testing
-    seed( 'random seed' )
-    shuffle( inputFiles )
-    seed( urandom( 64 ) )
+        global inputFiles, model, midiKeras, epoch, canvas
 
-    splitIdx  =  int( len( inputFiles ) * 0.9 )
-    trainFiles  =  inputFiles[ :splitIdx ]
-    testFiles   =  inputFiles[ splitIdx: ]
+        memMax      =  25 * 1024 * 1024
+        thisTrainX  =  [ ]
+        thisTrainY  =  [ ]
+        thisTestX   =  [ ]
+        thisTestY   =  [ ]
+        if not model:
+            layers  =  midiKeras.genLayers( mk.SEQ_LEN )
+            model   =  midiKeras.genFuncModel( layers )
+            with open( pathPrefix + '-struct.json', 'w' ) as f:
+                f.write( model.to_json( ) )
 
-    while True:
-        print 'epoch', epoch
+        # always use the same files for training and for testing
+        seed( 'random seed' )
+        shuffle( inputFiles )
+        seed( urandom( 64 ) )
 
-        shuffle( trainFiles )
-        shuffle( testFiles )
+        splitIdx  =  int( len( inputFiles ) * 0.9 )
+        trainFiles  =  inputFiles[ :splitIdx ]
+        testFiles   =  inputFiles[ splitIdx: ]
 
-        ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
-        ( testX, testY )    =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+        while True:
 
-        trainI  =  0
+            print 'epoch', epoch
 
-        while trainI  <  len( trainFiles ):
+            shuffle( trainFiles )
 
-            testI  =  min( int( float( trainI ) / len( trainFiles ) * len( testFiles ) ), len( testFiles ) - 1 )
+            ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
 
-            if len( thisTrainX ) == 0:
-                try:
+            trainI  =  0
 
-                    trainF  =  trainFiles[ trainI ]
-                    ( thisTrainX, thisTrainY )  =  midiKeras.oneStep( trainF )
+            while trainI  <  len( trainFiles ):
 
-                    testF  =  testFiles[ testI ]
-                    ( thisTestX, thisTestY )  =  midiKeras.oneStep( testF )
+                if len( thisTrainX ) == 0:
+                    try:
 
-                    trainI  +=  1
+                        trainF  =  trainFiles[ trainI ]
+                        ( thisTrainX, thisTrainY )  =  midiKeras.oneStep( trainF )
 
-                except:
+                        trainI  +=  1
 
-                    trainI  +=  1
-                    continue
+                    except:
 
-            trainIdx  =  range( len( thisTrainX ) )
-            testIdx   =  range( len( thisTestX ) )
-            shuffle( trainIdx )
-            shuffle( testIdx )
+                        trainI  +=  1
+                        continue
 
-            trainMem  =  sizeof( trainX )  +  sizeof( trainY )
-            testMem   =  sizeof( testX )   +  sizeof( testY )
+                trainIdx  =  range( len( thisTrainX ) )
+                shuffle( trainIdx )
 
-            thisTrainMem   =  sizeof( thisTrainX )  +  sizeof( thisTrainY )
-            ppb            =  len( thisTrainX ) / float( thisTrainMem )
-            neededNb       =  max( 0, memMax - trainMem - testMem ) * ppb
-            trainNb        =  int( neededNb * 0.9 )
-            testNb         =  int( neededNb - trainNb )
+                trainMem  =  sizeof( trainX )  +  sizeof( trainY )
 
-            trainX  =  np.vstack( ( trainX, thisTrainX[ trainIdx[ :trainNb ] ] ) )
-            trainY  =  np.vstack( ( trainY, thisTrainY[ trainIdx[ :trainNb ] ] ) )
-            testX   =  np.vstack( ( testX, thisTestX[ testIdx[ :testNb ] ] ) )
-            testY   =  np.vstack( ( testY, thisTestY[ testIdx[ :testNb ] ] ) )
+                thisTrainMem   =  sizeof( thisTrainX )  +  sizeof( thisTrainY )
+                ppb            =  len( thisTrainX ) / float( thisTrainMem )
+                neededNb       =  max( 0, memMax - trainMem ) * ppb
+                trainNb        =  int( neededNb * 0.9 )
 
-            thisTrainX  =  thisTrainX[ trainIdx[ trainNb: ] ]
-            thisTrainY  =  thisTrainY[ trainIdx[ trainNb: ] ]
-            thisTestX   =  thisTestX[ testIdx[ testNb: ] ]
-            thisTestY   =  thisTestY[ testIdx[ testNb: ] ]
+                trainX  =  np.vstack( ( trainX, thisTrainX[ trainIdx[ :trainNb ] ] ) )
+                trainY  =  np.vstack( ( trainY, thisTrainY[ trainIdx[ :trainNb ] ] ) )
+
+                thisTrainX  =  thisTrainX[ trainIdx[ trainNb: ] ]
+                thisTrainY  =  thisTrainY[ trainIdx[ trainNb: ] ]
 
 
-            if len( thisTrainX ) > 0  or  trainI == len( trainFiles ) - 1:
+                if len( thisTrainX ) > 0  or  trainI == len( trainFiles ) - 1:
 
-                percentage  =  trainI * 100 / len( trainFiles )
-                weightPrefix  =  pathPrefix + '-iter_' + str( epoch ) + '-' + str( percentage ) + '_prcnt'
-                if percentage % 20 == 0  and  not isfile( weightPrefix + '-weights.h5' ):
-                    model.save_weights( weightPrefix + '-weights.h5' )
-                    #dumpEmbeddingWeights( model, weightPrefix + '-embedding.png' )
+                    percentage  =  ( trainI + 1 ) * 100 / len( trainFiles )
+                    weightPrefix  =  pathPrefix + '-iter_' + str( epoch ) + '-' + str( percentage ) + '_prcnt'
+                    if percentage % 20 == 0  and  not isfile( weightPrefix + '-weights.h5' ):
+                        model.save_weights( weightPrefix + '-weights.h5' )
+                        #dumpEmbeddingWeights( model, weightPrefix + '-embedding.png' )
 
-                if len( trainX ) != 0  and  len( testX ) != 0:
-                    trainMetrics  =  model.train_on_batch( trainX, trainY )
-                    testMetrics   =  model.test_on_batch( testX, testY )
+                    if len( trainX ) != 0:
+                        trainMetrics  =  model.train_on_batch( trainX, trainY )
 
-                print str( percentage ) + '%', '\ttrain\t', trainMetrics[0], trainMetrics[1], '\ttest\t', testMetrics[0], testMetrics[1]
+                    print str( percentage ) + '%\t', trainMetrics[ 0 ], '\t', trainMetrics[ 1 ]
 
-                ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
-                ( testX, testY )    =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
+                    ( trainX, trainY )  =  ( np.zeros(( 0, mk.SEQ_LEN )), np.zeros(( 0, len( midiKeras.vocab ) )) )
 
 
-        epoch  +=  1
+            testMetrics  =  np.array( [ 0, 0 ], dtype = np.float32 )
+            n  =  0
 
-    quit( )
+            for f in testFiles:
+                ( testX, testY )  =  midiKeras.oneStep( f )
 
-    # if we have no training data, generate some random data
-    #if not len( trainData ):
-    #    for note in range(40, 70):
-    #        midiKeras.vocab.append( {note: [mk.NOTE_ON]} )
-    #        midiKeras.vocab.append( {note: [mk.NOTE_HOLD]} )
-    #        midiKeras.vocab.append( {note: [mk.NOTE_OFF]} )
-    #    for i in range(16):
-    #        vData = [ ]
-    #        for j in range(64):
-    #            vData.append( randint(1, len( midiKeras.vocab ) - 1) )
-    #        trainData.append(vData)
+                if len( testX )  !=  0:
+                    testMetrics  +=  model.test_on_batch( testX, testY )
+                    n  +=  1
 
-    # if we still have no training data, load all the data from the current mongo db
-    #if not len( trainData ):
-    #    client = MongoClient()
-    #    db = client.music
-    #    compositions = db.composition.find()
-    #    for composition in compositions:
-    #        vData = midiKeras.vocabularize( composition['notes'] )
-    #        trainData.append( vData )
+            testMetrics  /=  n
 
-    #if not len( testData ) and testFrag:
-    #    shuffle( trainData )
-    #    testIdx = ( int( len( trainData ) * testFrag ) * 16 ) / 16
-    #    endIdx  = ( len( trainData ) * 16 ) / 16
-    #    print testIdx, endIdx
-    #    testData = trainData[:testIdx]
-    #    trainData = trainData[testIdx:endIdx]
+            print 'test\t', testMetrics[ 0 ], testMetrics[ 1 ]
 
-    # if we didn't read in a vocab file, save the current vocab
-    if addToVocab:
-        with open( pathPrefix + '-vocab.pickle', 'w' ) as f:
-            f.write( pickle.dumps( midiKeras.vocab ) )
+            x  =  epoch * 10
+            y  =  800 - testMetrics[ 0 ] * 800 / 8
+            canvas.create_rectangle( ( x, y, x + 10, y + 10 ) )
+            canvas.update_idletasks( )
 
-    # vocab complexity
-    #for seq in trainData:
-    #    lens = { }
-    #    for k in seq:
-    #        e = midiKeras.vocab[k]
-    #        for n in e:
-    #            l = len(e[n])
-    #            if l not in lens:
-    #                lens[l] = 0
-    #            lens[l] += 1
-    #    print 'note lens', lens
-    #lens = { }
-    #for e in midiKeras.vocab[1:]:
-    #    for n in e:
-    #        l = len(e[n])
-    #        if l not in lens:
-    #            lens[l] = 0
-    #        lens[l] += 1
-    #print 'vocab lens', lens
+            epoch  +=  1
 
-    # Start working!
-    if len( trainData ) and not doRewrite:
-        # ( number-of-tracks, 1 )
-        batchShape = ( len( trainData ), 1 )
-
-        # if we didn't load a model, make a new one
-        if model is None:
-            model = midiKeras.genFuncModel( batchShape )
-
-        # train the model
-        print 'trainData:', trainData
-        print 'vocab:'
-        for i, v in enumerate( midiKeras.vocab ):
-            print i, v
-        trainer  =  Trainer( model, trainData, testData )
-        #print 'fTrainData:', trainer.fTrainData
-        #print 'fTrainLabels:', trainer.fTrainLabels
-        quit()
-        trainer.train( )
-
-        #loss = None
-        #while True:
-        #    defn = json.loads(model.to_json())
-        #    defn['config'] = defn['config'][:-1] + defn['config'][-2:-1] + defn['config'][-1:]
-        #    newModel = model_from_json(json.dumps(defn))
-        #    for l in defn['config'][:-2]:
-        #        #l.trainable = False
-        #        newModel.add(l)
-        #    newModel.add(LSTM(64, return_sequences = True, stateful = True))
-        #    newModel.add(LSTM(64, stateful = True))
-        #    newModel.add(Dense(len(midiKeras.vocab), activation = 'softmax'))
-        #    newModel.layers[-3].set_weights(model.layers[-2].get_weights())
-        #    newModel.layers[-1].set_weights(model.layers[-1].get_weights())
-        #    newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-        #    print len(newModel.layers), 'layers'
-        #    #train(newModel)
-
-        #    #for l in newModel.layers:
-        #    #    l.trainable = True
-        #    #print 'fine tuning'
-        #    #newModel.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-        #    lastLoss = loss
-        #    loss = train(newModel)
-        #    model = newModel
-        #    if lastLoss is not None and lastLoss < loss:
-        #        break
-
-    elif False and len(testData):
-        batchShape = (len(testData), 1)
-        if model is None:
-            model = midiKeras.genFuncModel(batchShape)
-            with open(pathPrefix + '-struct.json', 'w') as f:
-                f.write(model.to_json())
-        #else:
-        #    model.layers[0].batch_input_shape = batchShape
-        #    model.compile(optimizer = 'rmsprop', loss = 'categorical_crossentropy', metrics = ['accuracy'])
-
-        (fTestData, fTestLabels) = midiKeras.formatData(testData)
-
-        print len(fTestData)
-        a = model.evaluate(fTestData, fTestLabels, batch_size = batchShape[0])
-        print a
+    go( )
+    #master  =  Tk( )
+    #canvas  =  Canvas( master, width = 1600, height = 800, background = 'white' )
+    #canvas.pack( side = LEFT )
+    #goBtn  =  Button( master, text = 'Go', command = go )
+    #goBtn.pack( side = LEFT )
+    #master.mainloop( )

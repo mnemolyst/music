@@ -27,7 +27,7 @@ ON_OFF     = 2
 ON_OFF_ON  = 3
 OFF_ON_OFF = 4
 
-QN_DIV = 12
+QN_DIV = 4
 SEQ_LEN = QN_DIV * 4 * 3
 
 THIS_PATH = path.dirname( path.abspath( __file__ ) )
@@ -247,7 +247,9 @@ class MidiKeras:
                         break
                     startIdx  +=  1
 
-                endIdx  =  min( startIdx + SEQ_LEN, len( track ) )
+                maxEndIdx  =  min( startIdx + SEQ_LEN, len( track ) )
+
+                endIdx  =  maxEndIdx
 
                 if endIdx  <=  startIdx + 2:
                     break
@@ -296,19 +298,19 @@ class MidiKeras:
 
                 minEndIdx  =  endIdx + 1
 
-                while minEndIdx  <  startIdx + SEQ_LEN:
+                while minEndIdx  <  maxEndIdx:
                     if ON_ON in track[ minEndIdx - 1 ].values( ):
                         break
                     minEndIdx  +=  1
 
                 endIdx  =  minEndIdx + 1
 
-                while endIdx  <  startIdx + SEQ_LEN:
+                while endIdx  <  maxEndIdx:
                     if track[ endIdx - 1 ]  !=  track[ minEndIdx - 1 ]:
                         break
                     endIdx  +=  1
 
-                if endIdx  >=  min( startIdx + SEQ_LEN, len( track ) ):
+                if endIdx  >=  maxEndIdx:
                     startIdx  +=  1
                     continue
 
@@ -431,6 +433,7 @@ class MidiKeras:
 
     #############
     # TODO make custom Keras layer to put embedding mid-layerstack. Currently only allowed to use as first layer.
+    #############
     def genModel( self, inputLength ):
         model = Sequential( )
         model.add( Embedding( len( self.vocab ), 25, mask_zero = True, input_length = inputLength, dropout = 0.5 ) )
@@ -446,7 +449,7 @@ class MidiKeras:
     def genLayers( self, inputLength ):
         layers = [ ]
         layers.append( Input( shape = (inputLength,) ) )
-        layers.append( Embedding( len( self.vocab ), 25, mask_zero = True ) )
+        layers.append( Embedding( len( self.vocab ), 25, mask_zero = True, dropout = 0.5 ) )
 
         # "p-"
         #layers.append( LSTM( 100 ) )
@@ -474,9 +477,26 @@ class MidiKeras:
         #layers.append( LSTM( 50 ) )
 
         # "u-"
-        for i in range( 8 ):
-            layers.append( LSTM( 50, return_sequences = True ) )
-        layers.append( LSTM( 50 ) )
+        #for i in range( 8 ):
+        #    layers.append( LSTM( 50, return_sequences = True ) )
+        #layers.append( LSTM( 50 ) )
+
+        # "a-"
+        #for i in range( 6 ):
+        #    layers.append( LSTM( 50, return_sequences = True ) )
+        #layers.append( LSTM( 50 ) )
+
+        # "b-"
+        #for i in range( 10 ):
+        #    layers.append( LSTM( 50, return_sequences = True ) )
+        #layers.append( LSTM( 50 ) )
+
+        # "c-"
+        for i in range( 5 ):
+            layers.append( LSTM( 25, return_sequences = True, dropout_W = 0.5, dropout_U = 0.5 ) )
+            for j in range( 5 ):
+                layers.append( TimeDistributed( Highway( activation = 'relu' ) ) )
+        layers.append( LSTM( 25, dropout_W = 0.5, dropout_U = 0.5 ) )
 
         layers.append( Dense( len( self.vocab ), activation = 'softmax' ) )
         return layers
