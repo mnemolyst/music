@@ -19,7 +19,6 @@ import PIL
 from random import random, randint, shuffle, seed
 import math
 import json
-from pymongo import MongoClient
 import re
 from Tkinter import *
 import midi
